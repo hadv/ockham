@@ -160,8 +160,12 @@ impl SimplexState {
                 log::info!("QC Formed for View {}", vote.view);
                 e.insert(qc.clone());
 
-                // If we are the leader for the NEXT view (qc.view + 1), PROPOSE!
                 let next_view = vote.view + 1;
+                if next_view > self.current_view {
+                    self.current_view = next_view;
+                }
+
+                // If we are the leader for the NEXT view (qc.view + 1), PROPOSE!
                 if self.is_leader(next_view) {
                     log::info!("I am the leader for View {}! Proposing block...", next_view);
                     if let Ok(block) = self.create_proposal(next_view, qc, vote.block_hash) {

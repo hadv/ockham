@@ -20,6 +20,9 @@ RUST_LOG=info cargo run --quiet -- 2 > node2.log 2>&1 &
 echo "Starting Node 3..."
 RUST_LOG=info cargo run --quiet -- 3 > node3.log 2>&1 &
 
+echo "Starting Node 4..."
+RUST_LOG=info cargo run --quiet -- 4 > node4.log 2>&1 &
+
 echo "Nodes started. Waiting for 90 seconds for mDNS discovery and consensus and finalization..."
 sleep 90
 

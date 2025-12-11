@@ -20,8 +20,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     log::info!("Starting Node {}", id_arg);
 
-    // 2. Setup Committee (Fixed 4 nodes for prototype)
-    let committee: Vec<PublicKey> = (0..4).map(PublicKey).collect();
+    // 2. Setup Committee (Fixed 5 nodes for milestone)
+    let committee: Vec<PublicKey> = (0..5).map(PublicKey).collect();
 
     // 3. Initialize Network
     // Node 0 Listen on 9000, others random (0)
@@ -52,7 +52,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let actions = match event {
                     NetworkEvent::VoteReceived(vote) => {
                         log::info!("Received Vote View {} from {:?}", vote.view, vote.author);
-                        state.on_vote(vote)
+                        let old_view = state.current_view;
+                        let res = state.on_vote(vote);
+                        if state.current_view > old_view {
+                            log::info!("View Advanced to {}. Resetting Timer.", state.current_view);
+                            view_timer.reset();
+                        }
+                        res
                     }
                     NetworkEvent::BlockReceived(block) => {
                         log::info!("Received Block: {:?}", block);
@@ -76,7 +82,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                          ConsensusAction::BroadcastVote(vote) => { network.broadcast_vote(vote).await; }
                                          ConsensusAction::BroadcastBlock(block) => {
                                              log::info!("Broadcasting Block: {:?}", block);
-                                             network.broadcast_block(block).await;
+                                             network.broadcast_block(block.clone()).await;
+                                             // Loopback: Leader must process its own proposal to vote for it
+                                             if let Ok(vote_actions) = state.on_proposal(block) {
+                                                queue.extend(vote_actions);
+                                             }
                                          }
                                      }
                                  }
@@ -96,13 +106,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                          network.broadcast_vote(vote.clone()).await;
 
                                          // Loopback: Apply own vote locally
+                                         let old_view = state.current_view;
                                          if let Ok(new_actions) = state.on_vote(vote) {
+                                             if state.current_view > old_view {
+                                                 log::info!("View Advanced to {}. Resetting Timer.", state.current_view);
+                                                 view_timer.reset();
+                                             }
                                              action_queue.extend(new_actions);
                                          }
                                      }
                                      ConsensusAction::BroadcastBlock(block) => {
                                          log::info!("Broadcasting Block: {:?}", block);
-                                         network.broadcast_block(block).await;
+                                         network.broadcast_block(block.clone()).await;
+                                         // Loopback: Leader must process its own proposal to vote for it
+                                         if let Ok(vote_actions) = state.on_proposal(block) {
+                                            action_queue.extend(vote_actions);
+                                         }
                                      }
                                  }
                              }
@@ -126,7 +145,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                  ConsensusAction::BroadcastVote(vote) => {
                                      log::info!("Broadcasting Vote for View {}", vote.view);
                                      network.broadcast_vote(vote.clone()).await;
+                                     let old_view = state.current_view;
                                      if let Ok(new_actions) = state.on_vote(vote) {
+                                         if state.current_view > old_view {
+                                             log::info!("View Advanced to {}. Resetting Timer.", state.current_view);
+                                             view_timer.reset();
+                                         }
                                          action_queue.extend(new_actions);
                                      }
                                  }
