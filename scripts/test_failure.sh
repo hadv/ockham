@@ -53,8 +53,8 @@ echo "--- CHECKING FOR DUMMY BLOCK / TIMEOUT QCs ---"
 grep "QC Formed" node*.log | grep "block_hash: 0000000000000000000000000000000000000000000000000000000000000000"
 
 echo ""
-echo "--- ALL RECEIVED BLOCKS (Node 0) ---"
-grep "Received Block" node0.log
+echo "--- ALL RECEIVED BLOCKS (Node 0 - Last 3) ---"
+grep "Received Block" node0.log | tail -n 3
 
 echo ""
 echo "--- CONSENSUS HEALTH CHECK ---"
