@@ -60,7 +60,9 @@ impl Network {
                     gossipsub::MessageId::from(s.finish().to_string())
                 };
                 let gossipsub_config = gossipsub::ConfigBuilder::default()
-                    .heartbeat_interval(Duration::from_secs(1))
+                    .heartbeat_interval(Duration::from_millis(200)) // Very fast heartbeat for low latency start
+                    .history_length(10) // Keep message history longer to relay to late joiners
+                    .history_gossip(10) // Advertise history to more peers
                     .validation_mode(gossipsub::ValidationMode::Strict)
                     .message_id_fn(message_id_fn)
                     .build()

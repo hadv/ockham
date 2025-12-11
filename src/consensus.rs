@@ -66,18 +66,21 @@ impl SimplexState {
             votes_received: HashMap::new(),
         }
     }
-    
+
     /// Triggered on start or view change to check if we should propose.
     pub fn try_propose(&mut self) -> Result<Vec<ConsensusAction>, ConsensusError> {
         if self.is_leader(self.current_view) {
-             let prev_view = self.current_view - 1;
-             if let Some(qc) = self.qcs.get(&prev_view) {
-                 log::info!("I am the leader for View {}! Proposing block...", self.current_view);
-                 // Parent is the block this QC certifies
-                 let parent_hash = qc.block_hash;
-                 let block = self.create_proposal(self.current_view, qc.clone(), parent_hash)?;
-                 return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
-             }
+            let prev_view = self.current_view - 1;
+            if let Some(qc) = self.qcs.get(&prev_view) {
+                log::info!(
+                    "I am the leader for View {}! Proposing block...",
+                    self.current_view
+                );
+                // Parent is the block this QC certifies
+                let parent_hash = qc.block_hash;
+                let block = self.create_proposal(self.current_view, qc.clone(), parent_hash)?;
+                return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
+            }
         }
         Ok(vec![])
     }
