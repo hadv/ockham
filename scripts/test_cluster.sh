@@ -34,9 +34,24 @@ tail -n 5 node0.log
 echo "--- CONSENSUS CHECK ---"
 QC_COUNT=$(grep "QC Formed" node*.log | wc -l)
 BLOCK_COUNT=$(grep "Received Block" node*.log | wc -l)
+FINALIZED_COUNT=$(grep "FINALIZED BLOCK" node*.log | wc -l)
 
-echo "Total QCs Formed: $QC_COUNT"
-echo "Total Blocks Received: $BLOCK_COUNT"
+echo "Total QCs Formed:        $QC_COUNT"
+echo "Total Blocks Received:   $BLOCK_COUNT"
+echo "Total Finalized Blocks:  $FINALIZED_COUNT"
+
+if [ $FINALIZED_COUNT -gt 0 ]; then
+    echo ""
+    echo "--- LATEST FINALIZED BLOCK ---"
+    grep "FINALIZED BLOCK" node*.log | tail -n 1
+fi
+
+if [ $BLOCK_COUNT -gt 0 ]; then
+    echo ""
+    echo "--- SAMPLE RECEIVED BLOCK ---"
+    grep "Received Block" node*.log | head -n 1
+fi
+echo ""
 
 if [ $QC_COUNT -gt 0 ] || [ $BLOCK_COUNT -gt 0 ]; then
     echo "SUCCESS: Activity detected."
