@@ -38,7 +38,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut state = SimplexState::new(my_id, my_key, committee.clone());
 
     // 5. Timer for Views (Simple timeout for prototype)
-    let mut view_timer = time::interval(Duration::from_secs(5));
+    let mut view_timer = time::interval(Duration::from_secs(30));
 
     // State for startup synchronization
     let mut connected_peers = 0;
@@ -65,7 +65,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             log::info!("Enough peers connected ({}). Starting Consensus!", connected_peers);
                             consensus_started = true;
                             // Reset timer to align with start
-                            view_timer.reset();
+                            view_timer.reset(); 
+                            
+                            // Wait a bit for gossipsub mesh to stabilize before proposing
+                            tokio::time::sleep(Duration::from_secs(2)).await;
+
+                            // Check if WE are the leader for View 1 and propose immediately!
+                             if let Ok(initial_actions) = state.try_propose() {
+                                 // Process immediate proposal actions
+                                 let mut queue = initial_actions;
+                                 while let Some(action) = queue.pop() {
+                                     match action {
+                                         ConsensusAction::BroadcastVote(vote) => { network.broadcast_vote(vote).await; }
+                                         ConsensusAction::BroadcastBlock(block) => { 
+                                             log::info!("Broadcasting Block: {:?}", block);
+                                             network.broadcast_block(block).await; 
+                                         }
+                                     }
+                                 }
+                             }
                         }
                         Ok(vec![])
                     }

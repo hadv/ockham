@@ -52,6 +52,9 @@ impl SimplexState {
         // Map Dummy Hash to Genesis to handle timeouts/genesis-parent check
         blocks.insert(Hash::default(), genesis_block);
 
+        let mut qcs = HashMap::new();
+        qcs.insert(0, genesis_qc.clone());
+
         Self {
             my_id,
             my_key,
@@ -59,9 +62,24 @@ impl SimplexState {
             current_view: 1, // Start at view 1
             finalized_height: 0,
             blocks,
-            qcs: HashMap::new(),
+            qcs,
             votes_received: HashMap::new(),
         }
+    }
+    
+    /// Triggered on start or view change to check if we should propose.
+    pub fn try_propose(&mut self) -> Result<Vec<ConsensusAction>, ConsensusError> {
+        if self.is_leader(self.current_view) {
+             let prev_view = self.current_view - 1;
+             if let Some(qc) = self.qcs.get(&prev_view) {
+                 log::info!("I am the leader for View {}! Proposing block...", self.current_view);
+                 // Parent is the block this QC certifies
+                 let parent_hash = qc.block_hash;
+                 let block = self.create_proposal(self.current_view, qc.clone(), parent_hash)?;
+                 return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
+             }
+        }
+        Ok(vec![])
     }
 
     /// Handle a new proposal.
