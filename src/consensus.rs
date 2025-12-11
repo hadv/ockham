@@ -1,4 +1,4 @@
-use crate::crypto::{hash_data, sign, verify, Hash, PrivateKey, PublicKey};
+use crate::crypto::{Hash, PrivateKey, PublicKey, hash_data, sign, verify};
 use crate::types::{Block, QuorumCertificate, View, Vote};
 use std::collections::HashMap;
 use thiserror::Error;
@@ -30,11 +30,11 @@ pub struct SimplexState {
     pub committee: Vec<PublicKey>,
     pub current_view: View,
     pub finalized_height: View,
-    
+
     // Storage (mocked in memory)
     pub blocks: HashMap<Hash, Block>,
     pub qcs: HashMap<View, QuorumCertificate>,
-    
+
     // Vote Aggregation
     pub votes_received: HashMap<View, HashMap<PublicKey, Vote>>,
 }
@@ -43,13 +43,8 @@ impl SimplexState {
     pub fn new(my_id: PublicKey, my_key: PrivateKey, committee: Vec<PublicKey>) -> Self {
         // Create Genesis Block
         let genesis_qc = QuorumCertificate::default();
-        let genesis_block = Block::new(
-            PublicKey(0), 
-            0, 
-            Hash::default(), 
-            genesis_qc.clone(), 
-            vec![]
-        );
+        let genesis_block =
+            Block::new(PublicKey(0), 0, Hash::default(), genesis_qc.clone(), vec![]);
         let genesis_hash = hash_data(&genesis_block);
 
         let mut blocks = HashMap::new();
@@ -80,7 +75,7 @@ impl SimplexState {
 
         // 2. Check Parent (Simplex Lineage)
         if !self.blocks.contains_key(&block.parent_hash) {
-            // In a real system, we would buffer or request sync. 
+            // In a real system, we would buffer or request sync.
             // Here we error for simplicity of the unit test.
             return Err(ConsensusError::InvalidParent);
         }
@@ -100,26 +95,26 @@ impl SimplexState {
 
         // 6. Generate Vote
         let vote = self.create_vote(block.view, block_hash);
-        
+
         // 7. Try Finalize (Chain Commit)
         self.try_finalize(&block);
-        
+
         Ok(vec![ConsensusAction::BroadcastVote(vote)])
     }
 
     /// Handle an incoming vote.
     /// If we have enough votes (2f+1), form a QC.
     pub fn on_vote(&mut self, vote: Vote) -> Result<Vec<ConsensusAction>, ConsensusError> {
-         // Verify signature (mocked)
+        // Verify signature (mocked)
         if !verify(&vote.author, &vote.block_hash.0, &vote.signature) {
-             // For mock, we verify hash matches signature content.
+            // For mock, we verify hash matches signature content.
         }
 
         let view_votes = self.votes_received.entry(vote.view).or_default();
         view_votes.insert(vote.author, vote.clone());
 
         let threshold = (self.committee.len() * 2) / 3 + 1;
-        
+
         let mut count_for_block = 0;
         let mut signatures = Vec::new();
 
@@ -138,22 +133,22 @@ impl SimplexState {
                 block_hash: vote.block_hash,
                 signatures,
             };
-            
+
             // Check if we haven't already processed this QC to avoid dupes?
             if let std::collections::hash_map::Entry::Vacant(e) = self.qcs.entry(vote.view) {
                 log::info!("QC Formed for View {}", vote.view);
                 e.insert(qc.clone());
-                
+
                 // If we are the leader for the NEXT view (qc.view + 1), PROPOSE!
                 let next_view = vote.view + 1;
                 if self.is_leader(next_view) {
                     log::info!("I am the leader for View {}! Proposing block...", next_view);
                     if let Ok(block) = self.create_proposal(next_view, qc, vote.block_hash) {
-                         return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
+                        return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
                     }
                 }
             }
-            return Ok(vec![]); 
+            return Ok(vec![]);
         }
 
         Ok(vec![])
@@ -163,13 +158,13 @@ impl SimplexState {
     pub fn on_timeout(&mut self, view: View) -> Result<Vec<ConsensusAction>, ConsensusError> {
         if view < self.current_view {
             // For now, ignore old timeouts
-           return Ok(vec![]);
+            return Ok(vec![]);
         }
-        
+
         // Simplex timeout -> Vote for dummy
-        let dummy_hash = Hash([0u8; 32]); 
+        let dummy_hash = Hash([0u8; 32]);
         let vote = self.create_vote(view, dummy_hash);
-        
+
         Ok(vec![ConsensusAction::BroadcastVote(vote)])
     }
 
@@ -183,21 +178,26 @@ impl SimplexState {
             signature,
         }
     }
-    
+
     fn is_leader(&self, view: View) -> bool {
         let idx = (view as usize) % self.committee.len();
         self.committee[idx] == self.my_id
     }
-    
-    fn create_proposal(&self, view: View, qc: QuorumCertificate, parent: Hash) -> Result<Block, ConsensusError> {
-         let block = Block::new(
+
+    fn create_proposal(
+        &self,
+        view: View,
+        qc: QuorumCertificate,
+        parent: Hash,
+    ) -> Result<Block, ConsensusError> {
+        let block = Block::new(
             self.my_id,
             view,
             parent, // Parent of new block is the block certified by QC
             qc,
             vec![], // Payload empty for now
-         );
-         Ok(block)
+        );
+        Ok(block)
     }
 
     fn try_finalize(&mut self, head: &Block) {
@@ -207,23 +207,30 @@ impl SimplexState {
             // 2. Grandparent (GP)
             let gp_hash = parent.justify.block_hash;
             if let Some(gp) = self.blocks.get(&gp_hash) {
-                 log::info!("TryFinalize Check: Head(v{}) -> Parent(v{}) -> GP(v{})", head.view, parent.view, gp.view);
-                 // 3. Great-Grandparent (GGP) - Optional 3-chain check, or just commit GP (2-chain)
-                 // Let's commit GP if it's new, OR if it's Genesis and we haven't finalized anything yet (for demo)
-                 if gp.view > self.finalized_height || (gp.view == 0 && self.finalized_height == 0) {
-                     self.finalized_height = gp.view;
-                     log::info!("FINALIZED BLOCK: {:?}", gp);
-                 }
+                log::info!(
+                    "TryFinalize Check: Head(v{}) -> Parent(v{}) -> GP(v{})",
+                    head.view,
+                    parent.view,
+                    gp.view
+                );
+                // 3. Great-Grandparent (GGP) - Optional 3-chain check, or just commit GP (2-chain)
+                // Let's commit GP if it's new, OR if it's Genesis and we haven't finalized anything yet (for demo)
+                if gp.view > self.finalized_height || (gp.view == 0 && self.finalized_height == 0) {
+                    self.finalized_height = gp.view;
+                    log::info!("FINALIZED BLOCK: {:?}", gp);
+                }
             } else {
-                 log::warn!("TryFinalize: GP not found for Parent(v{})", parent.view);
+                log::warn!("TryFinalize: GP not found for Parent(v{})", parent.view);
             }
         } else {
-             log::warn!("TryFinalize: Parent not found for Head(v{})", head.view);
+            log::warn!("TryFinalize: Parent not found for Head(v{})", head.view);
         }
     }
 
     fn verify_qc(&self, qc: &QuorumCertificate) -> Result<(), ConsensusError> {
-        if qc.view == 0 { return Ok(()); } 
+        if qc.view == 0 {
+            return Ok(());
+        }
         Ok(())
     }
 }

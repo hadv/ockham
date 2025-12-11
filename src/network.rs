@@ -1,13 +1,13 @@
+use crate::types::{Block, Vote};
 use futures::StreamExt;
 use libp2p::{
-    gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux, Multiaddr,
+    Multiaddr, gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux,
 };
 use std::collections::hash_map::DefaultHasher;
 use std::error::Error;
 use std::hash::{Hash, Hasher};
 use std::time::Duration;
 use tokio::sync::mpsc;
-use crate::types::{Block, Vote};
 
 /// Network Behaviour combining Gossipsub (for consensus messages) and mDNS (for local discovery).
 #[derive(NetworkBehaviour)]
@@ -38,7 +38,6 @@ pub struct Network {
     command_sender: mpsc::Sender<NetworkCommand>,
     event_receiver: mpsc::Receiver<NetworkEvent>,
 }
-
 
 impl Network {
     pub async fn new(port: u16) -> Result<Self, Box<dyn Error>> {
@@ -73,12 +72,15 @@ impl Network {
                 )?;
 
                 // mDNS configuration
-                let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), key.public().to_peer_id())?;
-                
+                let mdns = mdns::tokio::Behaviour::new(
+                    mdns::Config::default(),
+                    key.public().to_peer_id(),
+                )?;
+
                 Ok(SimplexBehaviour { gossipsub, mdns })
             })?
             .build();
-            
+
         // 1b. Listen on localhost with specified port
         let addr = format!("/ip4/127.0.0.1/tcp/{}", port).parse()?;
         swarm.listen_on(addr)?;
@@ -163,22 +165,30 @@ impl Network {
             event_receiver,
         })
     }
-    
+
     pub async fn dial(&self, addr: &str) {
         if let Ok(multiaddr) = addr.parse() {
-            let _ = self.command_sender.send(NetworkCommand::Dial(multiaddr)).await;
+            let _ = self
+                .command_sender
+                .send(NetworkCommand::Dial(multiaddr))
+                .await;
         }
     }
 
-    
     pub async fn broadcast_block(&self, block: Block) {
-        let _ = self.command_sender.send(NetworkCommand::Broadcastblock(block)).await;
+        let _ = self
+            .command_sender
+            .send(NetworkCommand::Broadcastblock(block))
+            .await;
     }
-    
+
     pub async fn broadcast_vote(&self, vote: Vote) {
-         let _ = self.command_sender.send(NetworkCommand::BroadcastVote(vote)).await;
+        let _ = self
+            .command_sender
+            .send(NetworkCommand::BroadcastVote(vote))
+            .await;
     }
-    
+
     pub async fn next_event(&mut self) -> Option<NetworkEvent> {
         self.event_receiver.recv().await
     }

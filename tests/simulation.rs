@@ -1,4 +1,4 @@
-use ockham::consensus::{SimplexState, ConsensusAction};
+use ockham::consensus::{ConsensusAction, SimplexState};
 use ockham::crypto::{PrivateKey, PublicKey, hash_data};
 use ockham::types::{Block, QuorumCertificate};
 
@@ -32,7 +32,7 @@ fn test_three_chain_commit() {
 
     // All nodes process b1
     let mut votes_v1 = vec![];
-    
+
     // Helper to extract vote from actions
     let extract_vote = |actions: Vec<ConsensusAction>| -> Option<ockham::types::Vote> {
         for action in actions {
@@ -61,12 +61,12 @@ fn test_three_chain_commit() {
     // Aggregate votes for View 1 (QC1)
     let mut qc1 = None;
     for vote in votes_v1 {
-        // Feed vote back to Node 0. 
+        // Feed vote back to Node 0.
         // Note: on_vote now returns Vec<Action>, which is empty for now unless we implement auto-proposal.
         // But the QC is formed internally in `node0.qcs`.
-        
+
         let _ = node0.on_vote(vote.clone()).unwrap();
-        
+
         // Check if QC was formed in state
         if let Some(qc) = node0.qcs.get(&1) {
             qc1 = Some(qc.clone());
@@ -78,33 +78,32 @@ fn test_three_chain_commit() {
     let qc1 = qc1.unwrap();
     println!("QC1 Formed for View {}", qc1.view);
 
-
     // --- VIEW 2: PREPARE b2 ---
     // Leader 1 (Node 1) proposes Block 2 (parent = b1)
     // First, Node 1 needs to know about b1 and QC1 (sync/gossip)
     // We manually update Node 1 state
     other_nodes[0].blocks.insert(b1_hash, b1.clone());
-    
+
     // Node 1 proposes b2
     let b2 = Block::new(keys[1].0, 2, b1_hash, qc1.clone(), vec![4, 5, 6]);
     let b2_hash = hash_data(&b2);
-    
+
     // All nodes vote for b2
     let mut votes_v2 = vec![];
-    
+
     // Node 0 needs to see b2 (and its parent logic checks out)
     if let Some(v) = extract_vote(node0.on_proposal(b2.clone()).unwrap()) {
         votes_v2.push(v);
     }
-    
+
     for node in &mut other_nodes {
-         // ensure they have b1
-         if !node.blocks.contains_key(&b1_hash) {
-             node.blocks.insert(b1_hash, b1.clone());
-         }
-         if let Some(v) = extract_vote(node.on_proposal(b2.clone()).unwrap()) {
+        // ensure they have b1
+        if !node.blocks.contains_key(&b1_hash) {
+            node.blocks.insert(b1_hash, b1.clone());
+        }
+        if let Some(v) = extract_vote(node.on_proposal(b2.clone()).unwrap()) {
             votes_v2.push(v);
-         }
+        }
     }
 
     // Aggregate QC2 (Node 0 does it again for tracking)
@@ -118,7 +117,7 @@ fn test_three_chain_commit() {
     assert!(qc2.is_some(), "Should have formed QC for View 2");
     let qc2 = qc2.unwrap();
     println!("QC2 Formed for View {}", qc2.view);
-    
+
     // --- VERIFY COMMIT ---
     assert!(node0.blocks.contains_key(&b2_hash));
     assert!(node0.qcs.contains_key(&2));

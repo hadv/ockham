@@ -11,7 +11,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 1. Parse Node ID from args (0, 1, 2, 3)
     let args: Vec<String> = env::args().collect();
-    let id_arg = args.get(1).expect("Usage: cargo run -- <node_id>").parse::<u64>()?;
+    let id_arg = args
+        .get(1)
+        .expect("Usage: cargo run -- <node_id>")
+        .parse::<u64>()?;
     let my_id = PublicKey(id_arg);
     let my_key = PrivateKey(id_arg);
 
@@ -24,7 +27,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Node 0 Listen on 9000, others random (0)
     let port = if id_arg == 0 { 9000 } else { 0 };
     let mut network = Network::new(port).await?;
-    
+
     // Bootnode logic: If not node 0, dial node 0
     if id_arg != 0 {
         log::info!("Dialing bootnode...");
@@ -36,7 +39,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 5. Timer for Views (Simple timeout for prototype)
     let mut view_timer = time::interval(Duration::from_secs(5));
-    
+
     // State for startup synchronization
     let mut connected_peers = 0;
     let mut consensus_started = false;
@@ -62,12 +65,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                             log::info!("Enough peers connected ({}). Starting Consensus!", connected_peers);
                             consensus_started = true;
                             // Reset timer to align with start
-                            view_timer.reset(); 
+                            view_timer.reset();
                         }
                         Ok(vec![])
                     }
                 };
-                
+
                 match actions {
                     Ok(mut action_queue) => {
                         if consensus_started {
@@ -76,7 +79,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                      ConsensusAction::BroadcastVote(vote) => {
                                          log::info!("Broadcasting Vote for View {}", vote.view);
                                          network.broadcast_vote(vote.clone()).await;
-                                         
+
                                          // Loopback: Apply own vote locally
                                          if let Ok(new_actions) = state.on_vote(vote) {
                                              action_queue.extend(new_actions);
@@ -99,7 +102,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 if !consensus_started {
                     continue;
                 }
-                
+
                 // View Timeout processing
                 match state.on_timeout(state.current_view) {
                      Ok(mut action_queue) => {
@@ -125,5 +128,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
 }
-
-
