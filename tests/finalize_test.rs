@@ -86,15 +86,15 @@ fn test_explicit_finalization() {
 
     // Fabricate finalize votes from Node 1, 2
     for (pk, sk) in keys.iter().skip(1).take(2) {
-         let sig = ockham::crypto::sign(sk, &b1_hash.0);
-         let fvote = ockham::types::Vote {
-             view: 1,
-             block_hash: b1_hash,
-             vote_type: VoteType::Finalize,
-             author: *pk,
-             signature: sig
-         };
-         let _ = node0.on_vote(fvote);
+        let sig = ockham::crypto::sign(sk, &b1_hash.0);
+        let fvote = ockham::types::Vote {
+            view: 1,
+            block_hash: b1_hash,
+            vote_type: VoteType::Finalize,
+            author: *pk,
+            signature: sig,
+        };
+        let _ = node0.on_vote(fvote);
     }
 
     // 7. Assert Finalization
