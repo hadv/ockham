@@ -62,7 +62,7 @@ pub enum VoteType {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Vote {
     pub view: View,
-    pub block_hash: Hash, // The block being voted for (or ZeroHash/DummyHash)
+    pub block_hash: Hash,    // The block being voted for (or ZeroHash/DummyHash)
     pub vote_type: VoteType, // Distinguish between Notarize and Finalize
     pub author: PublicKey,
     pub signature: Signature,

@@ -87,7 +87,7 @@ impl SimplexState {
                 // Parent is the block this QC certifies
                 // FIX: If QC is for a dummy block (ZeroHash), we must extend the last real block (preferred_block)
                 let is_dummy = qc.block_hash == Hash::default();
-                
+
                 let parent_hash = if is_dummy {
                     self.preferred_block
                 } else {
@@ -141,7 +141,7 @@ impl SimplexState {
         // Actually, if we see a valid QC for View V, we can broadcast Finalize(V).
         // Let's implement that in `on_proposal` (since we verified block's QC) and `on_vote` (when we form a QC).
         let mut actions = vec![ConsensusAction::BroadcastVote(vote)];
-        
+
         // If this block came with a valid QC for (View-1), we can vote to finalize View-1.
         // Or if this block itself represents a success for the current view?
         // Simplex text: "on seeing 2n/3 votes for block b_h (notarized)... sends Finalize(h)"
@@ -149,8 +149,9 @@ impl SimplexState {
         // But the QC inside it proves (View-1) was notarized.
         let qc_view = block.justify.view;
         if qc_view > 0 {
-             let finalize_vote = self.create_vote(qc_view, block.justify.block_hash, VoteType::Finalize);
-             actions.push(ConsensusAction::BroadcastVote(finalize_vote));
+            let finalize_vote =
+                self.create_vote(qc_view, block.justify.block_hash, VoteType::Finalize);
+            actions.push(ConsensusAction::BroadcastVote(finalize_vote));
         }
 
         Ok(actions)
@@ -201,7 +202,8 @@ impl SimplexState {
                 let next_view = vote.view + 1;
 
                 // Broadcast Finalize for this View (since it is now notarized!)
-                let finalize_vote = self.create_vote(vote.view, vote.block_hash, VoteType::Finalize);
+                let finalize_vote =
+                    self.create_vote(vote.view, vote.block_hash, VoteType::Finalize);
                 let mut actions = vec![ConsensusAction::BroadcastVote(finalize_vote)];
                 if next_view > self.current_view {
                     self.current_view = next_view;
@@ -212,13 +214,13 @@ impl SimplexState {
                     log::info!("I am the leader for View {}! Proposing block...", next_view);
                     // FIX: If QC (from vote) is for a dummy block, extend preferred_block
                     let parent_hash = if vote.block_hash == Hash::default() {
-                         self.preferred_block
+                        self.preferred_block
                     } else {
-                         vote.block_hash
+                        vote.block_hash
                     };
 
                     if let Ok(block) = self.create_proposal(next_view, qc, parent_hash) {
-                         actions.push(ConsensusAction::BroadcastBlock(block));
+                        actions.push(ConsensusAction::BroadcastBlock(block));
                     }
                 }
                 return Ok(actions);

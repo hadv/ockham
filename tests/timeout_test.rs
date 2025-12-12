@@ -1,4 +1,3 @@
-
 use ockham::consensus::{ConsensusAction, SimplexState};
 use ockham::crypto::{PrivateKey, PublicKey, hash_data, sign};
 use ockham::types::{Block, QuorumCertificate, Vote};
@@ -34,7 +33,10 @@ fn test_timeout_chain_extension() {
     node0.on_vote(v1).unwrap();
 
     // Check Preferred Block is B1
-    assert_eq!(node0.preferred_block, b1_hash, "Preferred block should be B1");
+    assert_eq!(
+        node0.preferred_block, b1_hash,
+        "Preferred block should be B1"
+    );
 
     // --- VIEW 2 (Timeout) ---
     // Vote V2 (Dummy)
@@ -53,7 +55,10 @@ fn test_timeout_chain_extension() {
     assert_eq!(qc2.block_hash, ockham::crypto::Hash::default());
 
     // Check Preferred Block is STILL B1 (Not Dummy)
-    assert_eq!(node0.preferred_block, b1_hash, "Preferred block should NOT change to Dummy");
+    assert_eq!(
+        node0.preferred_block, b1_hash,
+        "Preferred block should NOT change to Dummy"
+    );
 
     // --- VIEW 3 (Proposal) ---
     // Node 0 prepares to propose for View 3.
@@ -64,7 +69,10 @@ fn test_timeout_chain_extension() {
     if let ConsensusAction::BroadcastBlock(b3) = &actions[0] {
         println!("Block 3 Parent: {:?}", b3.parent_hash);
         // CRITICAL CHECK: B3 must extend B1, not ZeroHash
-        assert_eq!(b3.parent_hash, b1_hash, "Block 3 must extend Block 1, NOT Dummy");
+        assert_eq!(
+            b3.parent_hash, b1_hash,
+            "Block 3 must extend Block 1, NOT Dummy"
+        );
         assert_ne!(b3.parent_hash, dummy_hash);
     } else {
         panic!("Expected BroadcastBlock");
