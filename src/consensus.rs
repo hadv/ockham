@@ -48,8 +48,13 @@ impl SimplexState {
     pub fn new(my_id: PublicKey, my_key: PrivateKey, committee: Vec<PublicKey>) -> Self {
         // Create Genesis Block
         let genesis_qc = QuorumCertificate::default();
-        let genesis_block =
-            Block::new(crate::crypto::generate_keypair_from_id(0).0, 0, Hash::default(), genesis_qc.clone(), vec![]);
+        let genesis_block = Block::new(
+            crate::crypto::generate_keypair_from_id(0).0,
+            0,
+            Hash::default(),
+            genesis_qc.clone(),
+            vec![],
+        );
         let genesis_hash = hash_data(&genesis_block);
 
         let mut blocks = HashMap::new();

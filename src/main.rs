@@ -1,5 +1,5 @@
 use ockham::consensus::{ConsensusAction, SimplexState};
-use ockham::crypto::{PrivateKey, PublicKey};
+use ockham::crypto::PublicKey;
 use ockham::network::{Network, NetworkEvent};
 use std::env;
 use std::time::Duration;

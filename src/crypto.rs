@@ -1,4 +1,6 @@
-use blst::min_sig::{AggregateSignature, PublicKey as BlstPublicKey, SecretKey, Signature as BlstSignature};
+use blst::min_sig::{
+    PublicKey as BlstPublicKey, SecretKey, Signature as BlstSignature,
+};
 use rand::RngCore;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha256};
@@ -64,7 +66,8 @@ impl<'de> Deserialize<'de> for PublicKey {
         D: Deserializer<'de>,
     {
         let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        let pk = BlstPublicKey::from_bytes(&bytes).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
+        let pk = BlstPublicKey::from_bytes(&bytes)
+            .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
         Ok(PublicKey(pk))
     }
 }
@@ -77,7 +80,7 @@ impl fmt::Debug for PublicKey {
 
 impl PartialOrd for PublicKey {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.0.to_bytes().partial_cmp(&other.0.to_bytes())
+        Some(self.cmp(other))
     }
 }
 
@@ -132,7 +135,8 @@ impl<'de> Deserialize<'de> for Signature {
         D: Deserializer<'de>,
     {
         let bytes: Vec<u8> = Deserialize::deserialize(deserializer)?;
-        let sig = BlstSignature::from_bytes(&bytes).map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
+        let sig = BlstSignature::from_bytes(&bytes)
+            .map_err(|e| serde::de::Error::custom(format!("{:?}", e)))?;
         Ok(Signature(sig))
     }
 }
@@ -171,7 +175,9 @@ pub fn sign(priv_key: &PrivateKey, message: &[u8]) -> Signature {
 
 /// Verifies a signature.
 pub fn verify(pub_key: &PublicKey, message: &[u8], signature: &Signature) -> bool {
-    let err = signature.0.verify(true, message, DST, &[], &pub_key.0, true);
+    let err = signature
+        .0
+        .verify(true, message, DST, &[], &pub_key.0, true);
     err == blst::BLST_ERROR::BLST_SUCCESS
 }
 
@@ -193,7 +199,7 @@ pub fn generate_keypair() -> (PublicKey, PrivateKey) {
 
 // -----------------------------------------------------------------------------
 // VRF (Verifiable Random Function) using BLS
-// 
+//
 // Proof = BLS Signature on the input (seed).
 // Output = Hash(Proof).
 // -----------------------------------------------------------------------------
@@ -241,18 +247,18 @@ mod tests {
         let seed = b"test_seed";
         let proof = vrf_prove(&sk, seed);
         assert!(vrf_verify(&pk, seed, &proof));
-        
+
         let output = proof.to_hash();
         println!("VRF Output: {:?}", output);
-        
+
         // Check uniqueness (deterministic)
         let proof2 = vrf_prove(&sk, seed);
         assert_eq!(proof.0, proof2.0);
-        
+
         // Check verification failure with wrong key
         let (pk2, _) = generate_keypair();
         assert!(!vrf_verify(&pk2, seed, &proof));
-        
+
         // Check verification failure with wrong seed
         assert!(!vrf_verify(&pk, b"wrong_seed", &proof));
     }
