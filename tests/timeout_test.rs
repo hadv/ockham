@@ -27,6 +27,7 @@ fn test_timeout_chain_extension() {
     let v1 = Vote {
         view: 1,
         block_hash: b1_hash,
+        vote_type: ockham::types::VoteType::Notarize,
         author: keys[0].0,
         signature: sign(&keys[0].1, &b1_hash.0),
     };
@@ -41,6 +42,7 @@ fn test_timeout_chain_extension() {
     let v2 = Vote {
         view: 2,
         block_hash: dummy_hash,
+        vote_type: ockham::types::VoteType::Notarize,
         author: keys[0].0,
         signature: sign(&keys[0].1, &dummy_hash.0),
     };
