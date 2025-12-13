@@ -1,12 +1,12 @@
+use jsonrpsee::server::Server;
 use ockham::consensus::{ConsensusAction, SimplexState};
 use ockham::crypto::PublicKey;
 use ockham::network::{Network, NetworkEvent};
+use ockham::rpc::{OckhamRpcImpl, OckhamRpcServer};
 use std::env;
+use std::sync::Arc;
 use std::time::Duration;
 use tokio::time;
-use ockham::rpc::{OckhamRpcServer, OckhamRpcImpl};
-use std::sync::Arc;
-use jsonrpsee::server::Server;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
