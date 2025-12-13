@@ -8,8 +8,10 @@
 
 *   **Optimal Optimistic Confirmation**: $3\delta$ (three network hops to finalize).
 *   **Optimal Block Time**: $2\delta$.
-*   **Simplex Liveness**: Uses a unique "Dummy Block" mechanism to recover from leader failures without a dedicated view-change phase.
-*   **Modular Architecture**: Built on the Actor Model using `tokio` for concurrency and `libp2p` for networking.
+*   **Simplex Liveness**: Uses a unique "Dummy Block" mechanism.
+*   **BLS Signature Aggregation**: Uses `blst` for efficient signature verification.
+*   **JSON-RPC API**: Standard interface for external clients.
+*   **Graceful Shutdown**: Ensures data integrity upon termination.
 
 ## Architecture
 
@@ -17,8 +19,10 @@ The project is structured into modular components:
 
 *   **`consensus`**: The core State Machine. Handles proposals, vote aggregation, and the $3\Delta$ timeout logic.
 *   **`types`**: Core data structures including `Block`, `Vote`, and `QuorumCertificate` (QC).
-*   **`crypto`**: Abstracted cryptography layer (currently mocked for Phase 1, targeting BLS12-381).
-*   **`network`**: `libp2p` implementation using Gossipsub for broadcasting Votes/Blocks and mDNS for peer discovery.
+*   **`crypto`**: BLS12-381 cryptography using `blst`. Supports signature aggregation and VRFs.
+*   **`network`**: `libp2p` implementation using Gossipsub/Noise.
+*   **`storage`**: Persistent storage using `Redb`.
+*   **`rpc`**: JSON-RPC server implementation.
 
 ## Getting Started
 
@@ -32,7 +36,7 @@ The project is structured into modular components:
 cargo build --release
 ```
 
-### Running the Cluster (Phase 2)
+### Running the Cluster
 
 We provide a script to spin up a local 4-node cluster for demonstration:
 
@@ -40,11 +44,17 @@ We provide a script to spin up a local 4-node cluster for demonstration:
 ./scripts/test_cluster.sh
 ```
 
-This will:
-1.  Start a "Bootnode" (Node 0) on port 9000.
-2.  Start 3 other nodes that dial Node 0.
-3.  Wait for the cluster to form and run consensus.
-4.  Print a summary of QCs formed and Blocks finalized.
+### JSON-RPC API
+
+Each node exposes a JSON-RPC server.
+- Node 0: `http://127.0.0.1:8545`
+- Node 1: `http://127.0.0.1:8546`
+- ...
+
+Example Query:
+```bash
+curl -H "Content-Type: application/json" -d '{"jsonrpc":"2.0", "method":"get_status", "params":[], "id":1}' http://127.0.0.1:8545
+```
 
 ### Running Tests
 
@@ -61,7 +71,6 @@ This project is being developed in 4 phases:
 - [x] **Phase 1: The Core Library**
     - Core data structures (`Block`, `Vote`, `QC`).
     - Consensus State Machine (`SimplexState`).
-    - Mock Cryptography.
     - Simulation Tests.
 
 - [x] **Phase 2: The Networked Prototype**
@@ -69,15 +78,16 @@ This project is being developed in 4 phases:
     - Gossipsub configuration.
     - Network-based consensus tests.
 
-- [ ] **Phase 3: Cryptography and Storage**
+- [x] **Phase 3: Cryptography and Storage**
     - [x] Replace mock crypto with `blst` (BLS12-381).
-    - [x] `RocksDB` integration for persistence.
-    - [ ] Sync protocol.
+    - [x] `Redb` integration for persistence.
+    - [x] Sync protocol.
 
-- [ ] **Phase 4: Optimization and Tooling**
-    - Signature Aggregation.
-    - JSON-RPC API.
-    - Block Explorer.
+- [x] **Phase 4: Optimization and Tooling**
+    - [x] Signature Aggregation.
+    - [x] JSON-RPC API.
+    - [x] Graceful Shutdown.
+    - [ ] Block Explorer (Moved to separate repo).
 
 ## License
 
