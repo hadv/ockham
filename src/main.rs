@@ -211,6 +211,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                      Err(e) => log::error!("Timeout Error: {:?}", e),
                 }
             }
+
+            // C. Shutdown Signal
+            _ = tokio::signal::ctrl_c() => {
+                log::info!("Shutdown signal received. Stopping RPC server...");
+                let _ = handle.stop();
+                handle.stopped().await;
+                log::info!("RPC server stopped.");
+                log::info!("Shutting down Node {}...", id_arg);
+                break;
+            }
         }
     }
+    
+    // Explicitly drop state/storage to ensure DB closes cleanly (though RAII does this)
+    drop(state);
+    log::info!("Node {} shutdown complete.", id_arg);
+    Ok(())
 }
