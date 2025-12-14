@@ -1,8 +1,52 @@
 use crate::crypto::{Hash, PublicKey, Signature};
+pub use alloy_primitives::{keccak256, Address, Bytes, FixedBytes, U256};
 use serde::{Deserialize, Serialize};
 
 /// The View number definition (u64).
 pub type View = u64;
+
+pub const BLOCK_GAS_LIMIT: u64 = 30_000_000;
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AccessListItem {
+    pub address: Address,
+    pub storage_keys: Vec<U256>,
+}
+
+/// EIP-1559 style Transaction
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Transaction {
+    pub chain_id: u64,
+    pub nonce: u64,
+    pub max_priority_fee_per_gas: U256,
+    pub max_fee_per_gas: U256,
+    pub gas_limit: u64,
+    pub to: Option<Address>, // None for contract creation
+    pub value: U256,
+    pub data: Bytes,
+    pub access_list: Vec<AccessListItem>,
+    pub public_key: PublicKey,
+    pub signature: Signature,
+}
+
+impl Transaction {
+    /// Derive the sender address from the public key.
+    pub fn sender(&self) -> Address {
+        let pk_bytes = self.public_key.0.to_bytes();
+        let hash = keccak256(&pk_bytes);
+        Address::from_slice(&hash[12..])
+    }
+
+    /// Check if this is a contract creation transaction.
+    pub fn is_create(&self) -> bool {
+        self.to.is_none()
+    }
+
+    /// Get the destination address (if any).
+    pub fn to_address(&self) -> Option<Address> {
+        self.to
+    }
+}
 
 /// A Block in the Simplex chain.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -11,7 +55,9 @@ pub struct Block {
     pub view: View,
     pub parent_hash: Hash,
     pub justify: QuorumCertificate, // The QC that justifies this block (usually for parent)
-    pub payload: Vec<u8>,           // Transactions (empty if dummy)
+    pub state_root: Hash,           // Global State Root after execution
+    pub receipts_root: Hash,        // Merkle root of transaction receipts
+    pub payload: Vec<Transaction>,  // Transactions
     pub is_dummy: bool,             // Simplex specific: Dummy blocks for timeout
 }
 
@@ -21,13 +67,17 @@ impl Block {
         view: View,
         parent_hash: Hash,
         justify: QuorumCertificate,
-        payload: Vec<u8>,
+        state_root: Hash,
+        receipts_root: Hash,
+        payload: Vec<Transaction>,
     ) -> Self {
         Self {
             author,
             view,
             parent_hash,
             justify,
+            state_root,
+            receipts_root,
             payload,
             is_dummy: false,
         }
@@ -44,6 +94,8 @@ impl Block {
             view,
             parent_hash,
             justify,
+            state_root: Hash::default(),
+            receipts_root: Hash::default(),
             payload: vec![],
             is_dummy: true,
         }

@@ -3,6 +3,10 @@ use ockham::consensus::{ConsensusAction, SimplexState};
 use ockham::crypto::PublicKey;
 use ockham::network::{Network, NetworkEvent};
 use ockham::rpc::{OckhamRpcImpl, OckhamRpcServer};
+use ockham::tx_pool::TxPool;
+use ockham::vm::Executor;
+use ockham::state::StateManager;
+use std::sync::Mutex;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -28,13 +32,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let storage: Arc<dyn ockham::storage::Storage> =
         Arc::new(ockham::storage::RedbStorage::new(db_path).expect("Failed to create DB"));
 
-    let mut state = SimplexState::new(my_id, my_key, committee, storage.clone());
+    // 2.1 Initialize Execution Layer
+    let tx_pool = Arc::new(TxPool::new());
+    
+    // StateManager needs to wrap Storage in Arc<Mutex>? No, StateManager holds Arc<dyn Storage>.
+    // But StateManager itself needs to be Arc<Mutex> for Executor.
+    // Wait, StateManager::new(storage) -> StateManager.
+    // Executor::new(Arc<Mutex<StateManager>>) -> Executor.
+    
+    // We already have `storage: Arc<dyn Storage>`.
+    // We need to create StateManager.
+    let state_manager = Arc::new(Mutex::new(StateManager::new(storage.clone())));
+    let executor = Executor::new(state_manager.clone());
+
+    let mut state = SimplexState::new(my_id, my_key, committee, storage.clone(), tx_pool.clone(), executor.clone());
 
     // Start RPC Server
     let rpc_port = 8545 + id_arg as u16; // 8545, 8546, ...
     let addr = format!("127.0.0.1:{}", rpc_port);
     let server = Server::builder().build(addr).await?;
-    let rpc_impl = OckhamRpcImpl::new(storage.clone());
+    let rpc_impl = OckhamRpcImpl::new(storage.clone(), tx_pool.clone());
     let handle = server.start(rpc_impl.into_rpc());
     log::info!("RPC Server started on port {}", rpc_port);
 
@@ -127,6 +144,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                 state.on_block_response(*block)
                             }
                         }
+                    }
+                    NetworkEvent::TransactionReceived(tx) => {
+                        log::info!("Received Transaction from {:?}", tx.public_key);
+                        if let Err(e) = tx_pool.add_transaction(tx) {
+                             log::warn!("Failed to add transaction: {:?}", e);
+                        } else {
+                             log::info!("Added transaction to pool. Pool size: {}", tx_pool.len());
+                        }
+                        Ok(vec![])
                     }
                 };
 

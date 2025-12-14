@@ -1,6 +1,7 @@
 use crate::crypto::Hash;
 use crate::storage::{ConsensusState, Storage};
-use crate::types::Block;
+use crate::types::{Block, Transaction, Address, U256};
+use crate::tx_pool::TxPool;
 use jsonrpsee::core::{RpcResult, async_trait};
 use jsonrpsee::proc_macros::rpc;
 use std::sync::Arc;
@@ -15,15 +16,25 @@ pub trait OckhamRpc {
 
     #[method(name = "get_status")]
     fn get_status(&self) -> RpcResult<Option<ConsensusState>>;
+
+    #[method(name = "send_transaction")]
+    fn send_transaction(&self, tx: Transaction) -> RpcResult<Hash>;
+
+    #[method(name = "get_balance")]
+    fn get_balance(&self, address: Address) -> RpcResult<U256>;
+
+    #[method(name = "chain_id")]
+    fn chain_id(&self) -> RpcResult<u64>;
 }
 
 pub struct OckhamRpcImpl {
     storage: Arc<dyn Storage>,
+    tx_pool: Arc<TxPool>,
 }
 
 impl OckhamRpcImpl {
-    pub fn new(storage: Arc<dyn Storage>) -> Self {
-        Self { storage }
+    pub fn new(storage: Arc<dyn Storage>, tx_pool: Arc<TxPool>) -> Self {
+        Self { storage, tx_pool }
     }
 }
 
@@ -72,5 +83,34 @@ impl OckhamRpcServer for OckhamRpcImpl {
             )
         })?;
         Ok(state)
+    }
+
+    fn send_transaction(&self, tx: Transaction) -> RpcResult<Hash> {
+        let hash = crate::crypto::hash_data(&tx);
+        // Validate? (TxPool does some validation)
+        self.tx_pool.add_transaction(tx).map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(
+                -32000,
+                format!("TxPool error: {:?}", e),
+                None::<()>,
+            )
+        })?;
+        Ok(hash)
+    }
+
+    fn get_balance(&self, address: Address) -> RpcResult<U256> {
+        let account = self.storage.get_account(&address).map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(
+                -32000,
+                format!("Storage error: {:?}", e),
+                None::<()>,
+            )
+        })?;
+        
+        Ok(account.map(|a| a.balance).unwrap_or_default())
+    }
+
+    fn chain_id(&self) -> RpcResult<u64> {
+        Ok(1337) // TODO: Config
     }
 }
