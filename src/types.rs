@@ -33,7 +33,7 @@ impl Transaction {
     /// Derive the sender address from the public key.
     pub fn sender(&self) -> Address {
         let pk_bytes = self.public_key.0.to_bytes();
-        let hash = keccak256(&pk_bytes);
+        let hash = keccak256(pk_bytes);
         Address::from_slice(&hash[12..])
     }
 

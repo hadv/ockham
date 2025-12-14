@@ -17,7 +17,6 @@ pub enum StateError {
 
 /// We use the default `Blake2bHasher` provided by the crate for the Tree structure itself.
 /// We can still use Keccak for leaf keys before inserting.
-
 pub type SmtStore = sparse_merkle_tree::default_store::DefaultStore<H256>;
 
 pub type StateTree = SparseMerkleTree<sparse_merkle_tree::blake2b::Blake2bHasher, H256, SmtStore>;
