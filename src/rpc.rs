@@ -1,7 +1,7 @@
 use crate::crypto::Hash;
 use crate::storage::{ConsensusState, Storage};
-use crate::types::{Block, Transaction, Address, U256};
 use crate::tx_pool::TxPool;
+use crate::types::{Address, Block, Transaction, U256};
 use jsonrpsee::core::{RpcResult, async_trait};
 use jsonrpsee::proc_macros::rpc;
 use std::sync::Arc;
@@ -106,7 +106,7 @@ impl OckhamRpcServer for OckhamRpcImpl {
                 None::<()>,
             )
         })?;
-        
+
         Ok(account.map(|a| a.balance).unwrap_or_default())
     }
 

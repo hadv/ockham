@@ -1,10 +1,9 @@
-
 use crate::crypto::Hash;
 use crate::state::StateManager;
 use crate::types::Block;
 use revm::{
-    primitives::{Address, ExecutionResult, TransactTo, ResultAndState, CreateScheme},
     EVM,
+    primitives::{Address, CreateScheme, ExecutionResult, ResultAndState, TransactTo},
 };
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
@@ -32,20 +31,20 @@ impl Executor {
     pub fn execute_block(&self, block: &mut Block) -> Result<(), ExecutionError> {
         // TODO: Validate block header, parent hash, etc? logic is in consensus.
         // Here we just execute transactions and update state root.
-        
+
         let mut db = self.state.lock().unwrap();
-        
+
         for tx in &block.payload {
             // 1. Validate signature (simple check here, or assume consensus did it?)
             // Ideally we check signatures before execution.
             if tx.sender() == Address::ZERO {
-                 return Err(ExecutionError::Transaction("Invalid sender".into()));
+                return Err(ExecutionError::Transaction("Invalid sender".into()));
             }
 
             // 2. Setup EVM
             let mut evm = EVM::new();
             evm.database(&mut *db);
-            
+
             // 3. Populate TxEnv
             // 3. Populate TxEnv
             // evm.env matches this version of revm
@@ -63,49 +62,53 @@ impl Executor {
             // map max_fee_per_gas to gas_price
             tx_env.gas_price = tx.max_fee_per_gas;
             // tx_env.max_fee_per_gas = ... (removed)
-            // tx_env.max_priority_fee_per_gas = ... (removed) 
+            // tx_env.max_priority_fee_per_gas = ... (removed)
             tx_env.nonce = Some(tx.nonce);
 
             // 4. Execute
-            let result_and_state = evm.transact().map_err(|e| ExecutionError::Evm(format!("{:?}", e)))?;
-            
+            let result_and_state = evm
+                .transact()
+                .map_err(|e| ExecutionError::Evm(format!("{:?}", e)))?;
+
             // 5. Commit state changes
             // result_and_state has .result (ExecutionResult) and .state (State = HashMap<Address, Account>)
             let ResultAndState { result, state } = result_and_state;
-            
+
             if let ExecutionResult::Success { .. } = result {
                 for (address, account) in state {
-                     // Always update for now, or check status if needed.
-                     // revm usually returns changed state in `ResultAndState`.
-                     
-                     // Update account info
-                     let info = crate::storage::AccountInfo {
-                         nonce: account.info.nonce,
-                         balance: account.info.balance,
-                         code_hash: Hash(account.info.code_hash.0),
-                         code: account.info.code.map(|c| c.original_bytes()),
-                     };
-                     
-                     db.commit_account(address, info).map_err(|e| ExecutionError::State(e.to_string()))?;
-                     
-                     // Update storage
-                     for (index, slot) in account.storage {
-                         // value in revm is cast to U256 (slot value). 
-                         // revm 3.x storage value is U256. 
-                         // But we need to check if it's present (Slot specific).
-                         // In 3.0 storage is `HashMap<U256, Slot>`. Slot has `present_value`.
-                         let val = slot.present_value;
-                         db.commit_storage(address, index, val).map_err(|e| ExecutionError::State(e.to_string()))?;
-                     }
+                    // Always update for now, or check status if needed.
+                    // revm usually returns changed state in `ResultAndState`.
+
+                    // Update account info
+                    let info = crate::storage::AccountInfo {
+                        nonce: account.info.nonce,
+                        balance: account.info.balance,
+                        code_hash: Hash(account.info.code_hash.0),
+                        code: account.info.code.map(|c| c.original_bytes()),
+                    };
+
+                    db.commit_account(address, info)
+                        .map_err(|e| ExecutionError::State(e.to_string()))?;
+
+                    // Update storage
+                    for (index, slot) in account.storage {
+                        // value in revm is cast to U256 (slot value).
+                        // revm 3.x storage value is U256.
+                        // But we need to check if it's present (Slot specific).
+                        // In 3.0 storage is `HashMap<U256, Slot>`. Slot has `present_value`.
+                        let val = slot.present_value;
+                        db.commit_storage(address, index, val)
+                            .map_err(|e| ExecutionError::State(e.to_string()))?;
+                    }
                 }
             }
-            
+
             // TODO: Collect receipts/logs for block header
         }
-        
+
         // 6. Update State Root in Block
         block.state_root = db.root();
-        
+
         Ok(())
     }
 }

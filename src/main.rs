@@ -3,12 +3,12 @@ use ockham::consensus::{ConsensusAction, SimplexState};
 use ockham::crypto::PublicKey;
 use ockham::network::{Network, NetworkEvent};
 use ockham::rpc::{OckhamRpcImpl, OckhamRpcServer};
+use ockham::state::StateManager;
 use ockham::tx_pool::TxPool;
 use ockham::vm::Executor;
-use ockham::state::StateManager;
-use std::sync::Mutex;
 use std::env;
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::time::Duration;
 use tokio::time;
 
@@ -34,18 +34,25 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // 2.1 Initialize Execution Layer
     let tx_pool = Arc::new(TxPool::new());
-    
+
     // StateManager needs to wrap Storage in Arc<Mutex>? No, StateManager holds Arc<dyn Storage>.
     // But StateManager itself needs to be Arc<Mutex> for Executor.
     // Wait, StateManager::new(storage) -> StateManager.
     // Executor::new(Arc<Mutex<StateManager>>) -> Executor.
-    
+
     // We already have `storage: Arc<dyn Storage>`.
     // We need to create StateManager.
     let state_manager = Arc::new(Mutex::new(StateManager::new(storage.clone())));
     let executor = Executor::new(state_manager.clone());
 
-    let mut state = SimplexState::new(my_id, my_key, committee, storage.clone(), tx_pool.clone(), executor.clone());
+    let mut state = SimplexState::new(
+        my_id,
+        my_key,
+        committee,
+        storage.clone(),
+        tx_pool.clone(),
+        executor.clone(),
+    );
 
     // Start RPC Server
     let rpc_port = 8545 + id_arg as u16; // 8545, 8546, ...

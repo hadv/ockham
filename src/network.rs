@@ -1,4 +1,4 @@
-use crate::types::{Block, Vote, Transaction};
+use crate::types::{Block, Transaction, Vote};
 use futures::StreamExt;
 use libp2p::{
     Multiaddr, gossipsub, mdns, noise, swarm::NetworkBehaviour, swarm::SwarmEvent, tcp, yamux,

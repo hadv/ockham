@@ -36,7 +36,15 @@ async fn test_rpc_get_block() {
     // Create a dummy block
     let (pk, _) = ockham::crypto::generate_keypair();
     let qc = QuorumCertificate::default();
-    let block = Block::new(pk, 1, ockham::crypto::Hash::default(), qc, ockham::crypto::Hash::default(), ockham::crypto::Hash::default(), vec![]);
+    let block = Block::new(
+        pk,
+        1,
+        ockham::crypto::Hash::default(),
+        qc,
+        ockham::crypto::Hash::default(),
+        ockham::crypto::Hash::default(),
+        vec![],
+    );
     let block_hash = ockham::crypto::hash_data(&block);
 
     storage.save_block(&block).unwrap();

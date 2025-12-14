@@ -88,7 +88,7 @@ pub struct ConsensusState {
 pub struct AccountInfo {
     pub nonce: u64,
     pub balance: U256,
-    pub code_hash: Hash, // keccak256(code)
+    pub code_hash: Hash,     // keccak256(code)
     pub code: Option<Bytes>, // Cache code here or just check TABLE_CODE
 }
 
@@ -119,7 +119,12 @@ pub trait Storage: Send + Sync {
     fn get_code(&self, hash: &Hash) -> Result<Option<Bytes>, StorageError>;
     fn save_code(&self, hash: &Hash, code: &Bytes) -> Result<(), StorageError>;
     fn get_storage(&self, address: &Address, index: &U256) -> Result<U256, StorageError>;
-    fn save_storage(&self, address: &Address, index: &U256, value: &U256) -> Result<(), StorageError>;
+    fn save_storage(
+        &self,
+        address: &Address,
+        index: &U256,
+        value: &U256,
+    ) -> Result<(), StorageError>;
 
     // SMT Node Storage (key is node hash, value is serialized node)
     fn get_smt_node(&self, hash: &Hash) -> Result<Option<Vec<u8>>, StorageError>;
@@ -222,10 +227,7 @@ impl Storage for MemStorage {
     }
 
     fn save_smt_node(&self, hash: &Hash, node: &[u8]) -> Result<(), StorageError> {
-        self.smt_nodes
-            .lock()
-            .unwrap()
-            .insert(*hash, node.to_vec());
+        self.smt_nodes.lock().unwrap().insert(*hash, node.to_vec());
         Ok(())
     }
 }
@@ -377,7 +379,7 @@ impl Storage for RedbStorage {
     fn get_storage(&self, address: &Address, index: &U256) -> Result<U256, StorageError> {
         let read_txn = self.db.begin_read()?;
         let table = read_txn.open_table(TABLE_STORAGE)?;
-        
+
         // Composite Key: Address + Index
         // 20 bytes + 32 bytes = 52 bytes
         let mut key = Vec::with_capacity(52);
@@ -392,14 +394,19 @@ impl Storage for RedbStorage {
         }
     }
 
-    fn save_storage(&self, address: &Address, index: &U256, value: &U256) -> Result<(), StorageError> {
+    fn save_storage(
+        &self,
+        address: &Address,
+        index: &U256,
+        value: &U256,
+    ) -> Result<(), StorageError> {
         let write_txn = self.db.begin_write()?;
         {
             let mut table = write_txn.open_table(TABLE_STORAGE)?;
             let mut key = Vec::with_capacity(52);
             key.extend_from_slice(address.as_slice());
             key.extend_from_slice(&index.to_be_bytes::<32>());
-            
+
             let val = bincode::serialize(value)?;
             table.insert(key.as_slice(), val)?;
         }

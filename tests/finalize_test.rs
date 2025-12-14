@@ -14,7 +14,9 @@ fn test_explicit_finalization() {
 
     let storage = std::sync::Arc::new(ockham::storage::MemStorage::new());
     let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
-    let state_manager = std::sync::Arc::new(std::sync::Mutex::new(ockham::state::StateManager::new(storage.clone())));
+    let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
+        ockham::state::StateManager::new(storage.clone()),
+    ));
     let executor = ockham::vm::Executor::new(state_manager.clone());
     let mut node0 = SimplexState::new(
         keys[0].0.clone(),
@@ -28,7 +30,15 @@ fn test_explicit_finalization() {
     // 2. Proposal for View 1
     let genesis_hash = node0.preferred_block;
     let qc0 = QuorumCertificate::default();
-    let b1 = Block::new(keys[0].0.clone(), 1, genesis_hash, qc0, ockham::crypto::Hash::default(), ockham::crypto::Hash::default(), vec![]);
+    let b1 = Block::new(
+        keys[0].0.clone(),
+        1,
+        genesis_hash,
+        qc0,
+        ockham::crypto::Hash::default(),
+        ockham::crypto::Hash::default(),
+        vec![],
+    );
 
     // 3. Node 0 receives Block 1 -> Should Vote (Notarize)
     let actions = node0.on_proposal(b1.clone()).unwrap();

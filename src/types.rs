@@ -1,5 +1,5 @@
 use crate::crypto::{Hash, PublicKey, Signature};
-pub use alloy_primitives::{keccak256, Address, Bytes, FixedBytes, U256};
+pub use alloy_primitives::{Address, Bytes, FixedBytes, U256, keccak256};
 use serde::{Deserialize, Serialize};
 
 /// The View number definition (u64).

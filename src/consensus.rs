@@ -2,8 +2,8 @@ use crate::crypto::{
     Hash, PrivateKey, PublicKey, aggregate, hash_data, sign, verify, verify_aggregate,
 };
 use crate::storage::{ConsensusState, Storage};
-use crate::types::{Block, QuorumCertificate, View, Vote, VoteType, BLOCK_GAS_LIMIT};
 use crate::tx_pool::TxPool;
+use crate::types::{BLOCK_GAS_LIMIT, Block, QuorumCertificate, View, Vote, VoteType};
 use crate::vm::Executor;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -54,7 +54,7 @@ pub struct SimplexState {
     // Sync: Orphan Buffer
     // Map: ParentHash -> List of Orphan Blocks waiting for that parent
     pub orphans: HashMap<Hash, Vec<Block>>,
-    
+
     // Execution & P2P
     pub tx_pool: Arc<TxPool>,
     pub executor: Executor,
@@ -158,16 +158,18 @@ impl SimplexState {
                     qc.block_hash
                 };
                 let mut block = self.create_proposal(self.current_view, qc.clone(), parent_hash)?;
-                
+
                 // Executor: Execute block to update state_root/receipts_root and validate transactions
                 // Note: modifying block payload and roots
                 // Since create_proposal now fills payload, we just need to execute it to get roots.
                 // Wait, create_proposal initializes empty payload currently.
                 // We should update create_proposal to fill payload.
-                
+
                 // Execute to calculate state root
-                self.executor.execute_block(&mut block).map_err(|_e| ConsensusError::InvalidParent)?; // Map error appropriately
-                
+                self.executor
+                    .execute_block(&mut block)
+                    .map_err(|_e| ConsensusError::InvalidParent)?; // Map error appropriately
+
                 return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
             }
         }
@@ -208,21 +210,21 @@ impl SimplexState {
         // 1.5 Execute Block (Validation)
         // We must re-execute to verify state_root and receipts_root matches.
         // Also this updates the local state.
-        // Clone block because execute_block modifies it (update roots), 
+        // Clone block because execute_block modifies it (update roots),
         // but here we want to check if the incoming block's roots match our execution.
         let mut executed_block = block.clone();
         // Reset roots to ZERO before execution to ensure we calculate them fresh?
         // No, execute_block calculates roots based on payload and UPDATES struct fields.
         // So we should see if `executed_block.state_root == block.state_root`.
         // But `executor.execute_block` overwrites the fields.
-        
+
         // Strategy:
-        // 1. Snapshot/Check current state (ensure we are extending parent state). 
+        // 1. Snapshot/Check current state (ensure we are extending parent state).
         //    (For simplicity we assume sequential execution on justified chain).
         // 2. Execute.
         // 3. Compare roots.
-        
-        // NOTE: state updates are committed to DB in `execute_block`. 
+
+        // NOTE: state updates are committed to DB in `execute_block`.
         // If we fail execution (bad root), we might have already modified state?
         // Optimally, `execute_block` should not commit if roots don't match provided.
         // OR `execute_block` is trusted to BE correct.
@@ -234,21 +236,25 @@ impl SimplexState {
         // This is tricky without transaction rollback.
         // MVP: Assume valid execution, if roots mismatch, we are in inconsistent state :(
         // FIX: For MVP we accept updating state. Ideally `redb` transaction should be passed to `execute_block`.
-        // Current `StateManager` uses `Arc<dyn Storage>`. 
+        // Current `StateManager` uses `Arc<dyn Storage>`.
         // Let's just run it. If invalid, we log error.
-        
+
         if let Err(e) = self.executor.execute_block(&mut executed_block) {
             log::error!("Block Execution Failed: {:?}", e);
             return Ok((true, vec![])); // Treat as invalid? or just valid consensus but execution failed?
             // If execution fails, block is invalid.
         }
-        
+
         if executed_block.state_root != block.state_root {
-             log::error!("Invalid State Root: expected {:?}, got {:?}", block.state_root, executed_block.state_root);
-             // return Err(ConsensusError::InvalidStateRoot);
-             // We return Ok(true, ...) but don't vote? 
-             // Logic below proceeds to save.
-             // We should error out.
+            log::error!(
+                "Invalid State Root: expected {:?}, got {:?}",
+                block.state_root,
+                executed_block.state_root
+            );
+            // return Err(ConsensusError::InvalidStateRoot);
+            // We return Ok(true, ...) but don't vote?
+            // Logic below proceeds to save.
+            // We should error out.
         }
 
         // 2. Verify QC
