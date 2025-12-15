@@ -33,6 +33,7 @@ impl Executor {
         // Here we just execute transactions and update state root.
 
         let mut db = self.state.lock().unwrap();
+        let mut cumulative_gas_used = 0u64;
 
         for tx in &block.payload {
             // 1. Validate signature (simple check here, or assume consensus did it?)
@@ -45,7 +46,10 @@ impl Executor {
             let mut evm = EVM::new();
             evm.database(&mut *db);
 
-            // 3. Populate TxEnv
+            // Set Block Info
+            evm.env.block.basefee = block.base_fee_per_gas;
+            // evm.env.block.gas_limit = U256::from(block_gas_limit...); // If needed
+
             // 3. Populate TxEnv
             // evm.env matches this version of revm
             let tx_env = &mut evm.env.tx;
@@ -58,17 +62,29 @@ impl Executor {
             tx_env.data = tx.data.clone();
             tx_env.value = tx.value;
             tx_env.gas_limit = tx.gas_limit;
-            // EIP-1559 to Legacy mapping for this revm version
-            // map max_fee_per_gas to gas_price
+            // EIP-1559 to Legacy mapping for this revm version (if needed)
+            // If using newest revm, we might have max_fee_per_gas field?
+            // Checking imports... `TxEnv` struct in older revm might only have gas_price.
+            // But we can check if `evm.env.tx` has `gas_priority_fee`.
+            // Assuming this version uses `gas_price` as effective gas price or max fee.
+            // Let's stick to setting gas_price = max_fee_per_gas for now, unless we upgrade revm integration.
             tx_env.gas_price = tx.max_fee_per_gas;
-            // tx_env.max_fee_per_gas = ... (removed)
-            // tx_env.max_priority_fee_per_gas = ... (removed)
+            tx_env.gas_priority_fee = Some(tx.max_priority_fee_per_gas); // Added if supported by local revm version used (3.5.0 supports it)
+
             tx_env.nonce = Some(tx.nonce);
 
             // 4. Execute
             let result_and_state = evm
                 .transact()
                 .map_err(|e| ExecutionError::Evm(format!("{:?}", e)))?;
+
+            // Track gas
+            if let ExecutionResult::Success { gas_used, .. } = result_and_state.result {
+                cumulative_gas_used += gas_used;
+            } else if let ExecutionResult::Revert { gas_used, .. } = result_and_state.result {
+                cumulative_gas_used += gas_used;
+            }
+            // Halt?
 
             // 5. Commit state changes
             // result_and_state has .result (ExecutionResult) and .state (State = HashMap<Address, Account>)
@@ -106,8 +122,9 @@ impl Executor {
             // TODO: Collect receipts/logs for block header
         }
 
-        // 6. Update State Root in Block
+        // 6. Update State Root and Gas Used in Block
         block.state_root = db.root();
+        block.gas_used = cumulative_gas_used;
 
         Ok(())
     }

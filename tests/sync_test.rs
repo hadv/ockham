@@ -14,6 +14,8 @@ fn create_block(author_id: u64, view: u64, parent_hash: Hash, justify: QuorumCer
         ockham::crypto::Hash::default(),
         ockham::crypto::Hash::default(),
         vec![],
+        ockham::types::U256::ZERO,
+        0,
     )
 }
 

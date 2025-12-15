@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub type View = u64;
 
 pub const BLOCK_GAS_LIMIT: u64 = 30_000_000;
+pub const INITIAL_BASE_FEE: u64 = 10_000_000; // 0.01 Gwei
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct AccessListItem {
@@ -59,6 +60,10 @@ pub struct Block {
     pub receipts_root: Hash,        // Merkle root of transaction receipts
     pub payload: Vec<Transaction>,  // Transactions
     pub is_dummy: bool,             // Simplex specific: Dummy blocks for timeout
+
+    // EIP-1559
+    pub base_fee_per_gas: U256,
+    pub gas_used: u64,
 }
 
 impl Block {
@@ -70,6 +75,8 @@ impl Block {
         state_root: Hash,
         receipts_root: Hash,
         payload: Vec<Transaction>,
+        base_fee_per_gas: U256,
+        gas_used: u64,
     ) -> Self {
         Self {
             author,
@@ -80,6 +87,8 @@ impl Block {
             receipts_root,
             payload,
             is_dummy: false,
+            base_fee_per_gas,
+            gas_used,
         }
     }
 
@@ -98,6 +107,8 @@ impl Block {
             receipts_root: Hash::default(),
             payload: vec![],
             is_dummy: true,
+            base_fee_per_gas: U256::from(INITIAL_BASE_FEE), // Default base fee for dummy
+            gas_used: 0,
         }
     }
 }

@@ -48,16 +48,27 @@ impl TxPool {
 
     /// Get a batch of transactions for a new block, respecting the gas limit.
     /// Ordered by Gas Price (max_fee_per_gas) Descending.
-    pub fn get_transactions_for_block(&self, block_gas_limit: u64) -> Vec<Transaction> {
+    pub fn get_transactions_for_block(
+        &self,
+        block_gas_limit: u64,
+        base_fee: crate::types::U256,
+    ) -> Vec<Transaction> {
         let mut pending = Vec::new();
         let map = self.transactions.lock().unwrap();
 
-        // 1. Collect all transactions
-        let mut all_txs: Vec<&Transaction> = map.values().collect();
+        // 1. Collect and Filter transactions
+        let mut all_txs: Vec<&Transaction> = map
+            .values()
+            .filter(|tx| tx.max_fee_per_gas >= base_fee)
+            .collect();
 
-        // 2. Sort by max_fee_per_gas descending
-        // U256 implements Ord.
-        all_txs.sort_by(|a, b| b.max_fee_per_gas.cmp(&a.max_fee_per_gas));
+        // 2. Sort by Effective Tip Descending
+        // Effective Tip = min(max_priority_fee, max_fee - base_fee)
+        all_txs.sort_by(|a, b| {
+            let tip_a = std::cmp::min(a.max_priority_fee_per_gas, a.max_fee_per_gas - base_fee);
+            let tip_b = std::cmp::min(b.max_priority_fee_per_gas, b.max_fee_per_gas - base_fee);
+            tip_b.cmp(&tip_a) // Descending
+        });
 
         // 3. Select fitting transactions
         let mut current_gas = 0u64;
@@ -68,9 +79,6 @@ impl TxPool {
                 current_gas += tx.gas_limit;
             }
             // Optimize: If block is full, break?
-            // Since we fill "Knapsack" greedily by price, if one doesn't fit, smaller ones might?
-            // But usually limit is large.
-            // If we hit limit perfectly, break.
             if current_gas >= block_gas_limit {
                 break;
             }

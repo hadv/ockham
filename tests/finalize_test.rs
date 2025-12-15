@@ -38,6 +38,8 @@ fn test_explicit_finalization() {
         ockham::crypto::Hash::default(),
         ockham::crypto::Hash::default(),
         vec![],
+        ockham::types::U256::ZERO,
+        0,
     );
 
     // 3. Node 0 receives Block 1 -> Should Vote (Notarize)

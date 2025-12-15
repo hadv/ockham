@@ -3,7 +3,9 @@ use crate::crypto::{
 };
 use crate::storage::{ConsensusState, Storage};
 use crate::tx_pool::TxPool;
-use crate::types::{BLOCK_GAS_LIMIT, Block, QuorumCertificate, View, Vote, VoteType};
+use crate::types::{
+    BLOCK_GAS_LIMIT, Block, INITIAL_BASE_FEE, QuorumCertificate, U256, View, Vote, VoteType,
+};
 use crate::vm::Executor;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -104,6 +106,8 @@ impl SimplexState {
             Hash::default(), // state_root
             Hash::default(), // receipts_root
             vec![],
+            U256::from(INITIAL_BASE_FEE), // Genesis Base Fee
+            0,
         );
         let genesis_hash = hash_data(&genesis_block);
 
@@ -424,7 +428,32 @@ impl SimplexState {
         qc: QuorumCertificate,
         parent: Hash,
     ) -> Result<Block, ConsensusError> {
-        let payload = self.tx_pool.get_transactions_for_block(BLOCK_GAS_LIMIT);
+        // Calculate Next Base Fee based on Parent
+        // We need to fetch the parent block to know its gas_used and base_fee.
+        // We know 'parent' hash.
+        let base_fee = if let Ok(Some(parent_block)) = self.storage.get_block(&parent) {
+            Self::calculate_next_base_fee(&parent_block)
+        } else {
+            // If parent not found (shouldn't happen for valid proposal unless genesis), use default
+            log::warn!(
+                "Parent block {:?} not found for proposal, using default base fee",
+                parent
+            );
+            U256::from(INITIAL_BASE_FEE)
+        };
+
+        // Filter transactions by base_fee
+        // Note: get_transactions_for_block should now assume sorted by priority fee and filter by base_fee
+        let payload = self
+            .tx_pool
+            .get_transactions_for_block(BLOCK_GAS_LIMIT, base_fee);
+
+        // Note: We don't know gas_used yet, only at execution.
+        // But Block::new requires it?
+        // Actually, for a PROPOSAL, gas_used is 0 (unexecuted) or predicted?
+        // In this architecture, we execute IMMEDIATELY after creation in try_propose.
+        // So we can initialize with 0, and executor updates it.
+
         let block = Block::new(
             self.my_id.clone(),
             view,
@@ -433,8 +462,36 @@ impl SimplexState {
             Hash::default(), // state_root (Calculated later in execute_block)
             Hash::default(), // receipts_root
             payload,
+            base_fee,
+            0, // gas_used initialized to 0, updated by executor
         );
         Ok(block)
+    }
+
+    /// EIP-1559 Base Fee Calculation
+    fn calculate_next_base_fee(parent: &Block) -> U256 {
+        let elasticity_multiplier = 2;
+        let base_fee_max_change_denominator = 8;
+        let target_gas = BLOCK_GAS_LIMIT / elasticity_multiplier;
+
+        let parent_gas_used = parent.gas_used;
+        let parent_base_fee = parent.base_fee_per_gas;
+
+        if parent_gas_used == target_gas {
+            parent_base_fee
+        } else if parent_gas_used > target_gas {
+            let gas_used_delta = parent_gas_used - target_gas;
+            let base_fee_increase = parent_base_fee * U256::from(gas_used_delta)
+                / U256::from(target_gas)
+                / U256::from(base_fee_max_change_denominator);
+            parent_base_fee + base_fee_increase
+        } else {
+            let gas_used_delta = target_gas - parent_gas_used;
+            let base_fee_decrease = parent_base_fee * U256::from(gas_used_delta)
+                / U256::from(target_gas)
+                / U256::from(base_fee_max_change_denominator);
+            parent_base_fee.saturating_sub(base_fee_decrease)
+        }
     }
 
     // try_finalize removed in favor of on_finalize_vote

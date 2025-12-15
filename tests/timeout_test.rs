@@ -38,6 +38,8 @@ fn test_timeout_chain_extension() {
         ockham::crypto::Hash::default(),
         ockham::crypto::Hash::default(),
         vec![],
+        ockham::types::U256::ZERO,
+        0,
     );
     let b1_hash = hash_data(&b1);
 

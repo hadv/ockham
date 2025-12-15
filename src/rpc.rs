@@ -25,6 +25,9 @@ pub trait OckhamRpc {
 
     #[method(name = "chain_id")]
     fn chain_id(&self) -> RpcResult<u64>;
+
+    #[method(name = "suggest_base_fee")]
+    fn suggest_base_fee(&self) -> RpcResult<U256>;
 }
 
 pub struct OckhamRpcImpl {
@@ -112,5 +115,58 @@ impl OckhamRpcServer for OckhamRpcImpl {
 
     fn chain_id(&self) -> RpcResult<u64> {
         Ok(1337) // TODO: Config
+    }
+
+    fn suggest_base_fee(&self) -> RpcResult<U256> {
+        // Get the latest block (preferred block in consensus)
+        let state = self.storage.get_consensus_state().map_err(|e| {
+            jsonrpsee::types::ErrorObject::owned(
+                -32000,
+                format!("Storage error: {:?}", e),
+                None::<()>,
+            )
+        })?;
+
+        if let Some(s) = state {
+            if let Ok(Some(block)) = self.storage.get_block(&s.preferred_block) {
+                // Return next suggested base fee
+                // Note: We need access to calculation logic.
+                // Currently it's private in SimpleState.
+                // We should expose it or duplicate it?
+                // Ideally move to types or a shared module.
+                // For MVP: Duplicate logic or simple calculation.
+                // Easiest is to move calculate_next_base_fee to Block or types.
+                // Let's implement duplicates for now but properly I should move it.
+                // Or better: ConsensusState stores `current_param`? No.
+                // Let's compute it.
+
+                // Logic mirror from consensus.rs
+                let elasticity_multiplier = 2;
+                let base_fee_max_change_denominator = 8;
+                let target_gas = crate::types::BLOCK_GAS_LIMIT / elasticity_multiplier;
+
+                let parent_gas_used = block.gas_used;
+                let parent_base_fee = block.base_fee_per_gas;
+
+                if parent_gas_used == target_gas {
+                    return Ok(parent_base_fee);
+                } else if parent_gas_used > target_gas {
+                    let gas_used_delta = parent_gas_used - target_gas;
+                    let base_fee_increase = parent_base_fee * U256::from(gas_used_delta)
+                        / U256::from(target_gas)
+                        / U256::from(base_fee_max_change_denominator);
+                    return Ok(parent_base_fee + base_fee_increase);
+                } else {
+                    let gas_used_delta = target_gas - parent_gas_used;
+                    let base_fee_decrease = parent_base_fee * U256::from(gas_used_delta)
+                        / U256::from(target_gas)
+                        / U256::from(base_fee_max_change_denominator);
+                    return Ok(parent_base_fee.saturating_sub(base_fee_decrease));
+                }
+            }
+        }
+
+        // Default if unknown (Genesis default)
+        Ok(U256::from(crate::types::INITIAL_BASE_FEE))
     }
 }

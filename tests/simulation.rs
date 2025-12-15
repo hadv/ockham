@@ -48,6 +48,8 @@ fn test_three_chain_commit() {
         ockham::crypto::Hash::default(),
         ockham::crypto::Hash::default(),
         vec![],
+        ockham::types::U256::ZERO,
+        0,
     );
     let b1_hash = hash_data(&b1);
 
@@ -117,6 +119,8 @@ fn test_three_chain_commit() {
         ockham::crypto::Hash::default(),
         ockham::crypto::Hash::default(),
         vec![],
+        ockham::types::U256::ZERO,
+        0,
     );
     let b2_hash = hash_data(&b2);
 
