@@ -21,6 +21,8 @@ pub enum ConsensusError {
     UnknownAuthor,
     #[error("Invalid State Root")]
     InvalidStateRoot,
+    #[error("Invalid Receipts Root")]
+    InvalidReceiptsRoot,
 }
 
 /// Abstract actions emitted by the consensus state machine.
@@ -129,6 +131,21 @@ impl SimplexState {
         };
         storage.save_consensus_state(&initial_state).unwrap();
 
+        // Allocating funds to Node 0 (Genesis Account)
+        let (pk0, _) = crate::crypto::generate_keypair_from_id(0);
+        let pk_bytes = pk0.0.to_bytes();
+        let hash = crate::types::keccak256(pk_bytes);
+        let address = crate::types::Address::from_slice(&hash[12..]);
+
+        // Save account with max balance
+        let account = crate::storage::AccountInfo {
+            nonce: 0,
+            balance: crate::types::U256::MAX,
+            code_hash: crate::crypto::Hash(crate::types::keccak256([]).into()),
+            code: None,
+        };
+        storage.save_account(&address, &account).unwrap();
+
         Self {
             my_id,
             my_key,
@@ -173,15 +190,47 @@ impl SimplexState {
                 // Wait, create_proposal initializes empty payload currently.
                 // We should update create_proposal to fill payload.
 
-                // Execute to calculate state root
                 self.executor
                     .execute_block(&mut block)
                     .map_err(|_e| ConsensusError::InvalidParent)?; // Map error appropriately
 
-                return Ok(vec![ConsensusAction::BroadcastBlock(block)]);
+                log::info!(
+                    "Proposal Executed. View: {}, Root: {:?}, Gas: {}",
+                    block.view,
+                    block.state_root,
+                    block.gas_used
+                );
+
+                // Clean up transactions from pool immediately
+                self.tx_pool.remove_transactions(&block.payload);
+
+                // SAVE the block immediately (Leader trusts own execution)
+                self.storage.save_block(&block).unwrap();
+
+                let mut actions = vec![ConsensusAction::BroadcastBlock(block.clone())];
+
+                // Generate Vote (Leader votes for own proposal)
+                let block_hash = hash_data(&block);
+                let vote = self.create_vote(block.view, block_hash, VoteType::Notarize);
+                actions.push(ConsensusAction::BroadcastVote(vote));
+
+                // Check Finalize (if QC justifies previous view)
+                let qc_view = block.justify.view;
+                if qc_view > 0 {
+                    let finalize_vote =
+                        self.create_vote(qc_view, block.justify.block_hash, VoteType::Finalize);
+                    actions.push(ConsensusAction::BroadcastVote(finalize_vote));
+                }
+
+                return Ok(actions);
             }
         }
         Ok(vec![])
+    }
+
+    // Helper to cleanup tx pool after proposing
+    pub fn cleanup_proposed_txs(&self, block: &Block) {
+        self.tx_pool.remove_transactions(&block.payload);
     }
 
     /// Shared logic for validating and storing a block (Proposal or Sync).
@@ -200,19 +249,34 @@ impl SimplexState {
                 .is_none()
         {
             // Orphan Logic: Buffer and Request Parent
-            log::info!(
-                "Received Orphan Block View {}. Parent {:?} missing. Buffering and Requesting...",
-                block.view,
-                block.parent_hash
-            );
             self.orphans
                 .entry(block.parent_hash)
                 .or_default()
                 .push(block.clone());
+
             return Ok((
                 false,
                 vec![ConsensusAction::BroadcastRequest(block.parent_hash)],
             ));
+        }
+
+        // 1.2 Fork/Lineage Check
+        // We can only execute this block if our local state corresponds to the parent block's state.
+        // Since we don't have rollback, we reject forks that don't extend our HEAD.
+        if let Ok(Some(parent)) = self.storage.get_block(&block.parent_hash) {
+            let current_root = self.executor.state.lock().unwrap().root();
+            if parent.state_root != current_root {
+                log::warn!(
+                    "Fork Detected: Block Parent Root {:?} != Local State Root {:?}. Ignoring block View {}",
+                    parent.state_root,
+                    current_root,
+                    block.view
+                );
+                // We simply return OK false (not stored) or error.
+                // If we error, it might be retried. If we ignore, we drop it.
+                // Let's drop it to silence the error.
+                return Ok((false, vec![]));
+            }
         }
 
         // 1.5 Execute Block (Validation)
@@ -260,6 +324,15 @@ impl SimplexState {
                 executed_block.state_root
             );
             return Err(ConsensusError::InvalidStateRoot);
+        }
+
+        if executed_block.receipts_root != block.receipts_root {
+            log::error!(
+                "Invalid Receipts Root: expected {:?}, got {:?}",
+                block.receipts_root,
+                executed_block.receipts_root
+            );
+            return Err(ConsensusError::InvalidReceiptsRoot);
         }
 
         // 2. Verify QC
@@ -376,7 +449,10 @@ impl SimplexState {
 
                 // If we are the leader for the NEXT view (qc.view + 1), PROPOSE!
                 if self.is_leader(next_view) {
-                    log::info!("I am the leader for View {}! Proposing block...", next_view);
+                    log::info!(
+                        "I am the leader for View {}! Proposing block (Chain)...",
+                        next_view
+                    );
                     // FIX: If QC (from vote) is for a dummy block, extend preferred_block
                     let parent_hash = if vote.block_hash == Hash::default() {
                         self.preferred_block
@@ -384,8 +460,39 @@ impl SimplexState {
                         vote.block_hash
                     };
 
-                    if let Ok(block) = self.create_proposal(next_view, qc, parent_hash) {
-                        actions.push(ConsensusAction::BroadcastBlock(block));
+                    if let Ok(mut block) = self.create_proposal(next_view, qc, parent_hash) {
+                        // Full Proposal Lifecycle
+                        if self.executor.execute_block(&mut block).is_ok() {
+                            log::info!(
+                                "Proposal Executed (Chain). View: {}, Root: {:?}, Gas: {}",
+                                block.view,
+                                block.state_root,
+                                block.gas_used
+                            );
+
+                            self.tx_pool.remove_transactions(&block.payload);
+                            self.storage.save_block(&block).unwrap();
+
+                            actions.push(ConsensusAction::BroadcastBlock(block.clone()));
+
+                            // Vote for own block
+                            let block_hash = hash_data(&block);
+                            let vote = self.create_vote(block.view, block_hash, VoteType::Notarize);
+                            actions.push(ConsensusAction::BroadcastVote(vote));
+
+                            // Finalize Vote if justified
+                            let qc_view = block.justify.view;
+                            if qc_view > 0 {
+                                let finalize_vote = self.create_vote(
+                                    qc_view,
+                                    block.justify.block_hash,
+                                    VoteType::Finalize,
+                                );
+                                actions.push(ConsensusAction::BroadcastVote(finalize_vote));
+                            }
+                        } else {
+                            log::error!("Failed to execute chained proposal View {}", next_view);
+                        }
                     }
                 }
                 return Ok(actions);
@@ -439,12 +546,17 @@ impl SimplexState {
         let base_fee = if let Ok(Some(parent_block)) = self.storage.get_block(&parent) {
             self.calculate_next_base_fee(&parent_block)
         } else {
-            // If parent not found (shouldn't happen for valid proposal unless genesis), use default
+            // FIX: If we can't find the parent, we can't safely propose because:
+            // 1. We don't know the base fee.
+            // 2. We haven't executed the parent, so our DB state is likely stale.
+            // 3. We might re-include transactions that were already in the parent.
+            // (Unless it's Genesis, but Genesis handling should ensure it's saved).
             log::warn!(
-                "Parent block {:?} not found for proposal, using default base fee",
+                "Parent block {:?} not found. Dropping proposal opportunity.",
                 parent
             );
-            U256::from(INITIAL_BASE_FEE)
+            // We should ideally request sync here too.
+            return Err(ConsensusError::InvalidParent);
         };
 
         // Filter transactions by base_fee

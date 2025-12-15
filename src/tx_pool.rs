@@ -101,7 +101,18 @@ impl TxPool {
         all_txs.sort_by(|a, b| {
             let tip_a = std::cmp::min(a.max_priority_fee_per_gas, a.max_fee_per_gas - base_fee);
             let tip_b = std::cmp::min(b.max_priority_fee_per_gas, b.max_fee_per_gas - base_fee);
-            tip_b.cmp(&tip_a) // Descending
+            let cmp = tip_b.cmp(&tip_a); // Descending
+            if cmp == std::cmp::Ordering::Equal {
+                // Secondary sort: Nonce Ascending for same sender
+                if a.public_key == b.public_key {
+                    a.nonce.cmp(&b.nonce)
+                } else {
+                    // Tertiary sort: Deterministic (Public Key)
+                    a.public_key.cmp(&b.public_key)
+                }
+            } else {
+                cmp
+            }
         });
 
         // 3. Select fitting transactions

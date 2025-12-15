@@ -53,11 +53,11 @@ impl Executor {
 
         let mut db = self.state.lock().unwrap();
         let mut cumulative_gas_used = 0u64;
-
-        // Pre-check: Sum of gas limits?
-        // Actually, effective gas is tracked during execution.
-        // But we can check if individual tx exceeds limit.
-        // Or if total gas used exceeds limit (checked at end of extraction).
+        log::info!(
+            "Executing block view {} with {} txs",
+            block.view,
+            block.payload.len()
+        );
 
         for tx in &block.payload {
             if tx.gas_limit > self.block_gas_limit {
@@ -67,9 +67,10 @@ impl Executor {
             }
         }
 
-        for tx in &block.payload {
+        let mut receipts = Vec::with_capacity(block.payload.len());
+
+        for (i, tx) in block.payload.iter().enumerate() {
             // 1. Validate signature (simple check here, or assume consensus did it?)
-            // Ideally we check signatures before execution.
             if tx.sender() == Address::ZERO {
                 return Err(ExecutionError::Transaction("Invalid sender".into()));
             }
@@ -80,10 +81,8 @@ impl Executor {
 
             // Set Block Info
             evm.env.block.basefee = block.base_fee_per_gas;
-            // evm.env.block.gas_limit = U256::from(block_gas_limit...); // If needed
 
             // 3. Populate TxEnv
-            // evm.env matches this version of revm
             let tx_env = &mut evm.env.tx;
             tx_env.caller = tx.sender();
             tx_env.transact_to = if let Some(to) = tx.to {
@@ -94,15 +93,8 @@ impl Executor {
             tx_env.data = tx.data.clone();
             tx_env.value = tx.value;
             tx_env.gas_limit = tx.gas_limit;
-            // EIP-1559 to Legacy mapping for this revm version (if needed)
-            // If using newest revm, we might have max_fee_per_gas field?
-            // Checking imports... `TxEnv` struct in older revm might only have gas_price.
-            // But we can check if `evm.env.tx` has `gas_priority_fee`.
-            // Assuming this version uses `gas_price` as effective gas price or max fee.
-            // Let's stick to setting gas_price = max_fee_per_gas for now, unless we upgrade revm integration.
             tx_env.gas_price = tx.max_fee_per_gas;
-            tx_env.gas_priority_fee = Some(tx.max_priority_fee_per_gas); // Added if supported by local revm version used (3.5.0 supports it)
-
+            tx_env.gas_priority_fee = Some(tx.max_priority_fee_per_gas);
             tx_env.nonce = Some(tx.nonce);
 
             // 4. Execute
@@ -110,24 +102,42 @@ impl Executor {
                 .transact()
                 .map_err(|e| ExecutionError::Evm(format!("{:?}", e)))?;
 
-            // Track gas
-            if let ExecutionResult::Success { gas_used, .. } = result_and_state.result {
-                cumulative_gas_used += gas_used;
-            } else if let ExecutionResult::Revert { gas_used, .. } = result_and_state.result {
-                cumulative_gas_used += gas_used;
-            }
-            // Halt?
-
             // 5. Commit state changes
-            // result_and_state has .result (ExecutionResult) and .state (State = HashMap<Address, Account>)
             let ResultAndState { result, state } = result_and_state;
 
-            if let ExecutionResult::Success { .. } = result {
-                for (address, account) in state {
-                    // Always update for now, or check status if needed.
-                    // revm usually returns changed state in `ResultAndState`.
+            // Track gas and extract logs
+            let (gas_used, status, logs) = match result {
+                ExecutionResult::Success { gas_used, logs, .. } => (gas_used, 1u8, logs),
+                ExecutionResult::Revert { gas_used, .. } => (gas_used, 0u8, vec![]),
+                ExecutionResult::Halt { gas_used, .. } => (gas_used, 0u8, vec![]),
+            };
+            cumulative_gas_used += gas_used;
+            log::info!(
+                "Tx {} executed. Gas used: {}. Cumulative: {}",
+                i,
+                gas_used,
+                cumulative_gas_used
+            );
 
-                    // Update account info
+            // Create Receipt
+            let receipt_logs: Vec<crate::types::Log> = logs
+                .into_iter()
+                .map(|l| crate::types::Log {
+                    address: l.address,
+                    topics: l.topics.into_iter().map(|t| Hash(t.0)).collect(),
+                    data: l.data,
+                })
+                .collect();
+
+            receipts.push(crate::types::Receipt {
+                status,
+                cumulative_gas_used,
+                logs: receipt_logs,
+            });
+
+            if status == 1 {
+                // Success
+                for (address, account) in state {
                     let info = crate::storage::AccountInfo {
                         nonce: account.info.nonce,
                         balance: account.info.balance,
@@ -138,25 +148,25 @@ impl Executor {
                     db.commit_account(address, info)
                         .map_err(|e| ExecutionError::State(e.to_string()))?;
 
-                    // Update storage
                     for (index, slot) in account.storage {
-                        // value in revm is cast to U256 (slot value).
-                        // revm 3.x storage value is U256.
-                        // But we need to check if it's present (Slot specific).
-                        // In 3.0 storage is `HashMap<U256, Slot>`. Slot has `present_value`.
                         let val = slot.present_value;
                         db.commit_storage(address, index, val)
                             .map_err(|e| ExecutionError::State(e.to_string()))?;
                     }
                 }
             }
-
-            // TODO: Collect receipts/logs for block header
         }
 
         // 6. Update State Root and Gas Used in Block
         block.state_root = db.root();
+        block.receipts_root = crate::types::calculate_receipts_root(&receipts);
         block.gas_used = cumulative_gas_used;
+        log::info!(
+            "Block Execution Complete. State Root: {:?}, Receipts Root: {:?}, Gas Used: {}",
+            block.state_root,
+            block.receipts_root,
+            block.gas_used
+        );
 
         Ok(())
     }

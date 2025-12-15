@@ -1,3 +1,4 @@
+pub mod client;
 pub mod consensus;
 pub mod crypto;
 pub mod network;

@@ -47,10 +47,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 2.1 Initialize Execution Layer
     let tx_pool = Arc::new(TxPool::new(storage.clone()));
 
-    // StateManager needs to wrap Storage in Arc<Mutex>? No, StateManager holds Arc<dyn Storage>.
-    // But StateManager itself needs to be Arc<Mutex> for Executor.
-    // Wait, StateManager::new(storage) -> StateManager.
-    // Executor::new(Arc<Mutex<StateManager>>) -> Executor.
+    // Channel for broadcasting transactions from RPC to Network
+    let (bg_tx_sender, mut bg_tx_receiver) = tokio::sync::mpsc::channel(100);
 
     // We already have `storage: Arc<dyn Storage>`.
     // We need to create StateManager.
@@ -71,7 +69,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_port = 8545 + id_arg as u16; // 8545, 8546, ...
     let addr = format!("127.0.0.1:{}", rpc_port);
     let server = Server::builder().build(addr).await?;
-    let rpc_impl = OckhamRpcImpl::new(storage.clone(), tx_pool.clone(), block_gas_limit);
+    let rpc_impl = OckhamRpcImpl::new(
+        storage.clone(),
+        tx_pool.clone(),
+        block_gas_limit,
+        bg_tx_sender,
+    );
     let handle = server.start(rpc_impl.into_rpc());
     log::info!("RPC Server started on port {}", rpc_port);
 
@@ -100,6 +103,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 6. Main Event Loop
     loop {
         tokio::select! {
+            // D. Broadcast Transactions from RPC
+            Some(tx) = bg_tx_receiver.recv() => {
+                log::info!("Broadcasting Transaction from RPC via Gossip");
+                network.broadcast_transaction(tx).await;
+            }
             // A. Network Events
             Some(event) = network.next_event() => {
                 let actions = match event {
@@ -136,10 +144,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                          ConsensusAction::BroadcastBlock(block) => {
                                              log::info!("Broadcasting Block: {:?}", block);
                                              network.broadcast_block(block.clone()).await;
-                                             // Loopback: Leader must process its own proposal to vote for it
-                                             if let Ok(vote_actions) = state.on_proposal(block) {
-                                                queue.extend(vote_actions);
-                                             }
+                                             // Loopback removed
                                          }
                                          ConsensusAction::BroadcastRequest(hash) => {
                                              network.broadcast_sync(ockham::types::SyncMessage::RequestBlock(hash)).await;
@@ -198,10 +203,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                                      ConsensusAction::BroadcastBlock(block) => {
                                          log::info!("Broadcasting Block: {:?}", block);
                                          network.broadcast_block(block.clone()).await;
-                                         // Loopback: Leader must process its own proposal to vote for it
-                                         if let Ok(vote_actions) = state.on_proposal(block) {
-                                            action_queue.extend(vote_actions);
-                                         }
+                                         // Loopback removed
                                      }
                                      ConsensusAction::BroadcastRequest(hash) => {
                                          network.broadcast_sync(ockham::types::SyncMessage::RequestBlock(hash)).await;

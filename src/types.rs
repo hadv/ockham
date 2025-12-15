@@ -159,6 +159,54 @@ pub struct QuorumCertificate {
     pub signers: Vec<PublicKey>, // Public keys of signers
 }
 
+/// Log entry from contract execution
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Log {
+    pub address: Address,
+    pub topics: Vec<Hash>,
+    pub data: Bytes,
+}
+
+/// Transaction Receipt
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Receipt {
+    pub status: u8, // 1 = Success, 0 = Revert
+    pub cumulative_gas_used: u64,
+    pub logs: Vec<Log>,
+    // bloom ignored for simplicity in this iteration
+}
+
+/// Helper to calculate Merkle Root of receipts (Simplified)
+/// In a real implementation this would use a Patricia Trie or proper Merkle Tree.
+#[allow(clippy::manual_is_multiple_of)]
+#[allow(clippy::clone_on_copy)]
+pub fn calculate_receipts_root(receipts: &[Receipt]) -> Hash {
+    if receipts.is_empty() {
+        return Hash::default();
+    }
+
+    // Simple Merkle Tree Construction
+    let mut leaves: Vec<Hash> = receipts.iter().map(crate::crypto::hash_data).collect();
+
+    while leaves.len() > 1 {
+        if leaves.len() % 2 != 0 {
+            leaves.push(*leaves.last().unwrap());
+        }
+        let mut next_level = Vec::new();
+        for chunk in leaves.chunks(2) {
+            let left = &chunk[0];
+            let right = &chunk[1];
+            // Hash(left ++ right)
+            let mut data = Vec::with_capacity(64);
+            data.extend_from_slice(&left.0);
+            data.extend_from_slice(&right.0);
+            next_level.push(Hash(keccak256(&data).into()));
+        }
+        leaves = next_level;
+    }
+    leaves[0]
+}
+
 /// Messages used for Block Synchronization
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum SyncMessage {
