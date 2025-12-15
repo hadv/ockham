@@ -269,6 +269,10 @@ impl SimplexState {
         // 4. Update state (store block)
         self.storage.save_block(&block).unwrap();
 
+        // 5. Clean up TxPool
+        // Remove transactions included in this valid block from our pool
+        self.tx_pool.remove_transactions(&block.payload);
+
         Ok((true, vec![]))
     }
 
