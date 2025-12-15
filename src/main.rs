@@ -25,11 +25,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Parse Optional --gas-limit
     let mut block_gas_limit = ockham::types::DEFAULT_BLOCK_GAS_LIMIT;
-    if let Some(pos) = args.iter().position(|r| r == "--gas-limit") {
-        if let Some(val) = args.get(pos + 1) {
-            block_gas_limit = val.parse::<u64>()?;
-            log::info!("Configured Block Gas Limit: {}", block_gas_limit);
-        }
+    if let Some(val) = args
+        .iter()
+        .position(|r| r == "--gas-limit")
+        .and_then(|pos| args.get(pos + 1))
+    {
+        block_gas_limit = val.parse::<u64>()?;
+        log::info!("Configured Block Gas Limit: {}", block_gas_limit);
     }
 
     // 2. Initialize Consensus
@@ -61,7 +63,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         committee,
         storage.clone(),
         tx_pool.clone(),
-        executor.clone(),
+        executor,
         block_gas_limit,
     );
 

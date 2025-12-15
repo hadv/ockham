@@ -27,7 +27,7 @@ mod tests {
     fn test_execute_block_gas_limit() {
         let storage = Arc::new(MemStorage::new());
         let state = Arc::new(Mutex::new(StateManager::new(storage)));
-        let executor = Executor::new(state, 10_000_000); // reduced limit
+        let _executor = Executor::new(state, 10_000_000); // reduced limit
 
         // ...
     }
