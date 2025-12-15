@@ -34,14 +34,21 @@ pub struct OckhamRpcImpl {
     storage: Arc<dyn Storage>,
     tx_pool: Arc<TxPool>,
     block_gas_limit: u64,
+    broadcast_sender: tokio::sync::mpsc::Sender<Transaction>,
 }
 
 impl OckhamRpcImpl {
-    pub fn new(storage: Arc<dyn Storage>, tx_pool: Arc<TxPool>, block_gas_limit: u64) -> Self {
+    pub fn new(
+        storage: Arc<dyn Storage>,
+        tx_pool: Arc<TxPool>,
+        block_gas_limit: u64,
+        broadcast_sender: tokio::sync::mpsc::Sender<Transaction>,
+    ) -> Self {
         Self {
             storage,
             tx_pool,
             block_gas_limit,
+            broadcast_sender,
         }
     }
 }
@@ -96,13 +103,20 @@ impl OckhamRpcServer for OckhamRpcImpl {
     fn send_transaction(&self, tx: Transaction) -> RpcResult<Hash> {
         let hash = crate::crypto::hash_data(&tx);
         // Validate? (TxPool does some validation)
-        self.tx_pool.add_transaction(tx).map_err(|e| {
+        self.tx_pool.add_transaction(tx.clone()).map_err(|e| {
             jsonrpsee::types::ErrorObject::owned(
                 -32000,
                 format!("TxPool error: {:?}", e),
                 None::<()>,
             )
         })?;
+
+        // Broadcast
+        let sender = self.broadcast_sender.clone();
+        tokio::spawn(async move {
+            let _ = sender.send(tx).await;
+        });
+
         Ok(hash)
     }
 

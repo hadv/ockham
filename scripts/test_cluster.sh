@@ -4,6 +4,11 @@ trap "kill 0" EXIT
 
 # Build
 echo "Cleaning DB and Logs..."
+pkill -f ockham
+rm -rf node*.db
+rm -rf node*.log
+rm -f ockham
+rm -f target/release/ockham
 rm -rf ./db
 rm -f node*.log
 
@@ -27,8 +32,14 @@ RUST_LOG=info cargo run --quiet -- 3 > node3.log 2>&1 &
 echo "Starting Node 4..."
 RUST_LOG=info cargo run --quiet -- 4 > node4.log 2>&1 &
 
-echo "Nodes started. Waiting for 90 seconds for mDNS discovery and consensus and finalization..."
-sleep 90
+echo "Nodes started. Waiting 10s for startup..."
+sleep 10
+
+echo "Injecting Transactions..."
+cargo test --test inject_tx -- --nocapture --ignored
+
+echo "Waiting remaining 80s for consensus..."
+sleep 80
 
 echo "--- LOG SUMMARY ---"
 echo "Node 0 (Head):"

@@ -17,7 +17,13 @@ async fn test_rpc_get_status() {
     storage.save_consensus_state(&state).unwrap();
 
     let tx_pool = Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
-    let rpc = OckhamRpcImpl::new(storage, tx_pool, ockham::types::DEFAULT_BLOCK_GAS_LIMIT);
+    let (tx_sender, _rx) = tokio::sync::mpsc::channel(100);
+    let rpc = OckhamRpcImpl::new(
+        storage,
+        tx_pool,
+        ockham::types::DEFAULT_BLOCK_GAS_LIMIT,
+        tx_sender,
+    );
 
     // Call RPC
     let result = rpc.get_status();
@@ -61,7 +67,13 @@ async fn test_rpc_get_block() {
     storage.save_consensus_state(&state).unwrap();
 
     let tx_pool = Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
-    let rpc = OckhamRpcImpl::new(storage, tx_pool, ockham::types::DEFAULT_BLOCK_GAS_LIMIT);
+    let (tx_sender, _rx) = tokio::sync::mpsc::channel(100);
+    let rpc = OckhamRpcImpl::new(
+        storage,
+        tx_pool,
+        ockham::types::DEFAULT_BLOCK_GAS_LIMIT,
+        tx_sender,
+    );
 
     // 1. get_block_by_hash
     let res = rpc.get_block_by_hash(block_hash);
