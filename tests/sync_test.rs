@@ -27,7 +27,7 @@ fn test_sync_orphan_processing() {
 
     // Initialize Bob (Sync Node)
     let storage = std::sync::Arc::new(MemStorage::new());
-    let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
+    let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
     let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
         ockham::state::StateManager::new(storage.clone()),
     ));
@@ -124,7 +124,7 @@ fn test_sync_block_serving() {
 
     // Initialize Alice
     let storage = std::sync::Arc::new(MemStorage::new());
-    let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
+    let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
     let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
         ockham::state::StateManager::new(storage.clone()),
     ));

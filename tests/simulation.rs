@@ -17,7 +17,7 @@ fn test_three_chain_commit() {
         .map(|i| {
             let storage = std::sync::Arc::new(ockham::storage::MemStorage::new());
             // Create individual tx pool and executor for each node
-            let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
+            let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
             let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
                 ockham::state::StateManager::new(storage.clone()),
             ));

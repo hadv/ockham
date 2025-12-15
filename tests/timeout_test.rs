@@ -11,7 +11,7 @@ fn test_timeout_chain_extension() {
 
     // Node 0
     let storage = std::sync::Arc::new(ockham::storage::MemStorage::new());
-    let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
+    let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
     let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
         ockham::state::StateManager::new(storage.clone()),
     ));

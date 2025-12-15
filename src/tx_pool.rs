@@ -1,4 +1,5 @@
-use crate::crypto::Hash;
+use crate::crypto::{Hash, verify};
+use crate::storage::Storage;
 use crate::types::Transaction;
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
@@ -10,28 +11,61 @@ pub enum PoolError {
     AlreadyExists,
     #[error("Invalid signature")]
     InvalidSignature,
+    #[error("Invalid Nonce: expected {0}, got {1}")]
+    InvalidNonce(u64, u64),
+    #[error("Storage Error: {0}")]
+    StorageError(String),
 }
 
 /// A simple Transaction Pool (Mempool).
 /// proper implementation should handle nonce ordering and gas price sorting.
 /// MVP: Simple FIFO/Map.
-#[derive(Clone, Default)]
+#[derive(Clone)]
 pub struct TxPool {
     // Map Hash -> Transaction for quick lookup
     transactions: Arc<Mutex<HashMap<Hash, Transaction>>>,
     // Queue for FIFO ordering (MVP)
     queue: Arc<Mutex<VecDeque<Hash>>>,
+    // Storage access for nonce check
+    storage: Arc<dyn Storage>,
 }
 
 impl TxPool {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn new(storage: Arc<dyn Storage>) -> Self {
+        Self {
+            transactions: Arc::new(Mutex::new(HashMap::new())),
+            queue: Arc::new(Mutex::new(VecDeque::new())),
+            storage,
+        }
     }
 
     /// Add a transaction to the pool.
     pub fn add_transaction(&self, tx: Transaction) -> Result<(), PoolError> {
-        // TODO: Validate signature
-        // TODO: Validate nonce against state (require access to StateManager?)
+        // 1. Validate Signature
+        let sighash = tx.sighash();
+        if !verify(&tx.public_key, &sighash.0, &tx.signature) {
+            return Err(PoolError::InvalidSignature);
+        }
+
+        // 2. Validate Nonce
+        // Get sender account state
+        let sender = tx.sender();
+        let account_nonce = if let Some(account) = self
+            .storage
+            .get_account(&sender)
+            .map_err(|e| PoolError::StorageError(e.to_string()))?
+        {
+            account.nonce
+        } else {
+            0
+        };
+
+        if tx.nonce < account_nonce {
+            return Err(PoolError::InvalidNonce(account_nonce, tx.nonce));
+        }
+
+        // TODO: Also check if nonce is already in pool? (Pending Nonce)
+        // For MVP we just check against state.
 
         let hash = crate::crypto::hash_data(&tx);
 
@@ -111,5 +145,85 @@ impl TxPool {
 
     pub fn is_empty(&self) -> bool {
         self.transactions.lock().unwrap().is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::crypto::{generate_keypair, sign};
+    use crate::storage::MemStorage;
+    use crate::types::{Address, Bytes, U256}; // AccessListItem not used in test but needed if we construct
+
+    #[test]
+    fn test_add_transaction_validation() {
+        let storage = Arc::new(MemStorage::new());
+        let pool = TxPool::new(storage.clone());
+
+        let (pk, sk) = generate_keypair();
+
+        let mut tx = Transaction {
+            chain_id: 1337,
+            nonce: 0,
+            max_priority_fee_per_gas: U256::ZERO,
+            max_fee_per_gas: U256::from(10_000_000),
+            gas_limit: 21000,
+            to: Some(Address::ZERO),
+            value: U256::ZERO,
+            data: Bytes::from(vec![]),
+            access_list: vec![],
+            public_key: pk.clone(),
+            signature: crate::crypto::Signature::default(), // Invalid initially
+        };
+
+        // 1. Sign properly
+        let sighash = tx.sighash();
+        let sig = sign(&sk, &sighash.0);
+        tx.signature = sig;
+
+        // Add proper tx -> Ok
+        assert!(pool.add_transaction(tx.clone()).is_ok());
+
+        // 2. Replay -> Error
+        assert!(matches!(
+            pool.add_transaction(tx.clone()),
+            Err(PoolError::AlreadyExists)
+        ));
+
+        // 3. Bad Signature
+        let mut bad_tx = tx.clone();
+        bad_tx.nonce = 1; // Change body => sighash changes
+        // Signature remains for nonce 0 => Invalid
+        assert!(matches!(
+            pool.add_transaction(bad_tx).unwrap_err(),
+            PoolError::InvalidSignature
+        ));
+
+        // 4. Bad Nonce
+        // Set account nonce in storage to 5
+        let sender = tx.sender();
+        // Manually save account to storage
+        // Needs AccountInfo struct
+        let account = crate::storage::AccountInfo {
+            nonce: 5,
+            balance: U256::ZERO,
+            code_hash: crate::crypto::Hash::default(),
+            code: None,
+        };
+        storage.save_account(&sender, &account).unwrap();
+
+        let mut low_nonce_tx = tx.clone();
+        low_nonce_tx.nonce = 4;
+        let sigh = low_nonce_tx.sighash();
+        low_nonce_tx.signature = sign(&sk, &sigh.0);
+
+        // Should fail nonce check
+        match pool.add_transaction(low_nonce_tx) {
+            Err(PoolError::InvalidNonce(expected, got)) => {
+                assert_eq!(expected, 5);
+                assert_eq!(got, 4);
+            }
+            _ => panic!("Expected InvalidNonce"),
+        }
     }
 }

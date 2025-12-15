@@ -47,6 +47,24 @@ impl Transaction {
     pub fn to_address(&self) -> Option<Address> {
         self.to
     }
+
+    /// Calculate the signature hash (sighash) of the transaction.
+    /// Hashes all fields except public_key and signature.
+    pub fn sighash(&self) -> Hash {
+        // Create a tuple of fields to hash
+        let data = (
+            self.chain_id,
+            self.nonce,
+            &self.max_priority_fee_per_gas,
+            &self.max_fee_per_gas,
+            self.gas_limit,
+            &self.to,
+            &self.value,
+            &self.data,
+            &self.access_list,
+        );
+        crate::crypto::hash_data(&data)
+    }
 }
 
 /// A Block in the Simplex chain.

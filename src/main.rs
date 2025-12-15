@@ -33,7 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Arc::new(ockham::storage::RedbStorage::new(db_path).expect("Failed to create DB"));
 
     // 2.1 Initialize Execution Layer
-    let tx_pool = Arc::new(TxPool::new());
+    let tx_pool = Arc::new(TxPool::new(storage.clone()));
 
     // StateManager needs to wrap Storage in Arc<Mutex>? No, StateManager holds Arc<dyn Storage>.
     // But StateManager itself needs to be Arc<Mutex> for Executor.

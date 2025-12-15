@@ -26,7 +26,7 @@ fn test_redb_persistence() {
     {
         println!("--- Run 1: Init Genesis ---");
         let storage = std::sync::Arc::new(RedbStorage::new(db_path).unwrap());
-        let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
+        let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
         let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
             ockham::state::StateManager::new(storage.clone()),
         ));
@@ -49,7 +49,7 @@ fn test_redb_persistence() {
     {
         println!("--- Run 2: Restart & Load ---");
         let storage = std::sync::Arc::new(RedbStorage::new(db_path).unwrap());
-        let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new());
+        let tx_pool = std::sync::Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
         let state_manager = std::sync::Arc::new(std::sync::Mutex::new(
             ockham::state::StateManager::new(storage.clone()),
         ));

@@ -16,7 +16,7 @@ async fn test_rpc_get_status() {
     };
     storage.save_consensus_state(&state).unwrap();
 
-    let tx_pool = Arc::new(ockham::tx_pool::TxPool::new());
+    let tx_pool = Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
     let rpc = OckhamRpcImpl::new(storage, tx_pool);
 
     // Call RPC
@@ -60,7 +60,7 @@ async fn test_rpc_get_block() {
     };
     storage.save_consensus_state(&state).unwrap();
 
-    let tx_pool = Arc::new(ockham::tx_pool::TxPool::new());
+    let tx_pool = Arc::new(ockham::tx_pool::TxPool::new(storage.clone()));
     let rpc = OckhamRpcImpl::new(storage, tx_pool);
 
     // 1. get_block_by_hash
