@@ -21,6 +21,8 @@ pub enum ConsensusError {
     InvalidQC,
     #[error("Unknown author")]
     UnknownAuthor,
+    #[error("Invalid State Root")]
+    InvalidStateRoot,
 }
 
 /// Abstract actions emitted by the consensus state machine.
@@ -255,10 +257,7 @@ impl SimplexState {
                 block.state_root,
                 executed_block.state_root
             );
-            // return Err(ConsensusError::InvalidStateRoot);
-            // We return Ok(true, ...) but don't vote?
-            // Logic below proceeds to save.
-            // We should error out.
+            return Err(ConsensusError::InvalidStateRoot);
         }
 
         // 2. Verify QC

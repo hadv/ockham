@@ -29,11 +29,24 @@ impl Executor {
     }
 
     pub fn execute_block(&self, block: &mut Block) -> Result<(), ExecutionError> {
-        // TODO: Validate block header, parent hash, etc? logic is in consensus.
-        // Here we just execute transactions and update state root.
+        // Validation: Ensure block gas limit is respected by consensus
+        // Also consensus ensures parent hash linkage.
 
         let mut db = self.state.lock().unwrap();
         let mut cumulative_gas_used = 0u64;
+
+        // Pre-check: Sum of gas limits?
+        // Actually, effective gas is tracked during execution.
+        // But we can check if individual tx exceeds limit.
+        // Or if total gas used exceeds limit (checked at end of extraction).
+
+        for tx in &block.payload {
+            if tx.gas_limit > crate::types::BLOCK_GAS_LIMIT {
+                return Err(ExecutionError::Transaction(
+                    "Tx exceeds block gas limit".into(),
+                ));
+            }
+        }
 
         for tx in &block.payload {
             // 1. Validate signature (simple check here, or assume consensus did it?)
