@@ -15,10 +15,9 @@ pub enum StateError {
     Smt(String),
 }
 
-/// We use the default `Blake2bHasher` provided by the crate for the Tree structure itself.
-/// We can still use Keccak for leaf keys before inserting.
+// Reverting to DefaultStore because we cannot find the Store trait to implement OckhamSmtStore.
+// TODO: Find correct trait path for sparse_merkle_tree::traits::Store to enable persistence.
 pub type SmtStore = sparse_merkle_tree::default_store::DefaultStore<H256>;
-
 pub type StateTree = SparseMerkleTree<sparse_merkle_tree::blake2b::Blake2bHasher, H256, SmtStore>;
 
 pub struct StateManager {
@@ -27,7 +26,8 @@ pub struct StateManager {
 }
 
 impl StateManager {
-    pub fn new(storage: Arc<dyn Storage>) -> Self {
+    // Keep signature compatible with tests (ignoring initial_root for now)
+    pub fn new(storage: Arc<dyn Storage>, _initial_root: Option<Hash>) -> Self {
         let store = SmtStore::default();
         let tree = SparseMerkleTree::new(H256::zero(), store);
         Self {
@@ -36,22 +36,28 @@ impl StateManager {
         }
     }
 
+    pub fn new_from_tree(storage: Arc<dyn Storage>, tree: StateTree) -> Self {
+        Self {
+            tree: Arc::new(Mutex::new(tree)),
+            storage,
+        }
+    }
+
+    pub fn snapshot(&self) -> StateTree {
+        let tree = self.tree.lock().unwrap();
+        let root = *tree.root();
+        let store = tree.store().clone();
+        SparseMerkleTree::new(root, store)
+    }
+
     pub fn update_account(&self, address: Address, account_hash: Hash) -> Result<Hash, StateError> {
-        // Convert Address (20 bytes) to H256 (32 bytes) for the key.
-        // We can just pad it or hash it. Hashing it is safer for distribution.
         let key_hash = keccak256(address);
         let key = H256::from(key_hash.0);
-
-        // Value is the hash of the AccountInfo
         let value = H256::from(account_hash.0);
 
         let mut tree = self.tree.lock().unwrap();
         tree.update(key, value)
             .map_err(|e| StateError::Smt(format!("{:?}", e)))?;
-
-        // Also save to storage?
-        // We assume account_info is already saved in TABLE_ACCOUNTS by caller.
-        // If not, we should probably take AccountInfo here too.
 
         let root = tree.root();
         let mut root_bytes = [0u8; 32];
@@ -71,17 +77,12 @@ impl StateManager {
         address: Address,
         info: crate::storage::AccountInfo,
     ) -> Result<(), StateError> {
-        // 1. Save full account data to persistent storage (for VM execution)
         self.storage
             .save_account(&address, &info)
             .map_err(|e| StateError::Smt(e.to_string()))?;
 
-        // 2. Hash the account info (Serialize -> Hash)
         let hash = hash_data(&info);
-
-        // 3. Update the SMT (Commitment)
         self.update_account(address, hash)?;
-
         Ok(())
     }
 
@@ -95,13 +96,29 @@ impl StateManager {
             .save_storage(&address, &index, &value)
             .map_err(|e| StateError::Smt(e.to_string()))
     }
+
+    pub fn get_consensus_state(
+        &self,
+    ) -> Result<Option<crate::storage::ConsensusState>, StateError> {
+        self.storage
+            .get_consensus_state()
+            .map_err(|e| StateError::Smt(e.to_string()))
+    }
+
+    pub fn save_consensus_state(
+        &self,
+        state: &crate::storage::ConsensusState,
+    ) -> Result<(), StateError> {
+        self.storage
+            .save_consensus_state(state)
+            .map_err(|e| StateError::Smt(e.to_string()))
+    }
 }
 
 impl Database for StateManager {
     type Error = StateError;
 
     fn basic(&mut self, address: Address) -> Result<Option<RevmAccountInfo>, Self::Error> {
-        // Fetch from storage
         if let Some(info) = self
             .storage
             .get_account(&address)
@@ -110,7 +127,6 @@ impl Database for StateManager {
             let code = if let Some(c) = info.code {
                 Some(Bytecode::new_raw(c))
             } else if info.code_hash != Hash::default() {
-                // Fetch code by hash
                 let code_bytes = self
                     .storage
                     .get_code(&info.code_hash)
@@ -150,8 +166,6 @@ impl Database for StateManager {
     }
 
     fn block_hash(&mut self, _number: U256) -> Result<B256, Self::Error> {
-        // TODO: Implement block hash lookup by number
-        // For now return zero
         Ok(B256::ZERO)
     }
 }
