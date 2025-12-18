@@ -50,10 +50,10 @@ impl EvidencePool {
     /// Remove evidence that has been included in a block/processed.
     pub fn remove_evidence(&mut self, evidence: &[EquivocationEvidence]) {
         for e in evidence {
-            if let Some(list) = self.evidences.get_mut(&e.vote_a.author) {
-                if let Some(pos) = list.iter().position(|x| x == e) {
-                    list.remove(pos);
-                }
+            if let Some(list) = self.evidences.get_mut(&e.vote_a.author)
+                && let Some(pos) = list.iter().position(|x| x == e)
+            {
+                list.remove(pos);
             }
         }
     }

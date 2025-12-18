@@ -493,23 +493,24 @@ impl SimplexState {
         let view_votes = self.votes_received.entry(vote.view).or_default();
 
         // 0. Equivocation Check
-        if let Some(existing_vote) = view_votes.get(&vote.author) {
-            if existing_vote.block_hash != vote.block_hash {
-                log::warn!(
-                    "Equivocation Detected from {:?} in View {}",
-                    vote.author,
-                    vote.view
-                );
-                let evidence = EquivocationEvidence {
-                    vote_a: existing_vote.clone(),
-                    vote_b: vote.clone(),
-                };
-                // Add to pool and broadcast
-                if self.evidence_pool.add_evidence(evidence.clone()) {
-                    return Ok(vec![ConsensusAction::BroadcastEvidence(evidence)]);
-                } else {
-                    return Ok(vec![]);
-                }
+        // 0. Equivocation Check
+        if let Some(existing_vote) = view_votes.get(&vote.author)
+            && existing_vote.block_hash != vote.block_hash
+        {
+            log::warn!(
+                "Equivocation Detected from {:?} in View {}",
+                vote.author,
+                vote.view
+            );
+            let evidence = EquivocationEvidence {
+                vote_a: existing_vote.clone(),
+                vote_b: vote.clone(),
+            };
+            // Add to pool and broadcast
+            if self.evidence_pool.add_evidence(evidence.clone()) {
+                return Ok(vec![ConsensusAction::BroadcastEvidence(evidence)]);
+            } else {
+                return Ok(vec![]);
             }
         }
 
