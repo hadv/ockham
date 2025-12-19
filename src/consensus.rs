@@ -156,6 +156,7 @@ impl SimplexState {
             pending_validators: vec![],
             exiting_validators: vec![],
             stakes: HashMap::new(),
+            inactivity_scores: HashMap::new(),
         };
         storage.save_consensus_state(&initial_state).unwrap();
 
@@ -840,6 +841,7 @@ impl SimplexState {
                 pending_validators: vec![],
                 exiting_validators: vec![],
                 stakes: HashMap::new(),
+                inactivity_scores: HashMap::new(),
             });
 
         // Update fields we manage

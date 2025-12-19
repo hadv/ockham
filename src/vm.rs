@@ -155,6 +155,90 @@ impl Executor {
             }
         }
 
+        // 0.5 Process Liveness (Leader Slashing)
+        if let Ok(Some(mut state)) = db.get_consensus_state() {
+            let mut changed = false;
+
+            // 1. Reward Current Leader (Author)
+            if let Some(score) = state.inactivity_scores.get_mut(&block.author) {
+                if *score > 0 {
+                    *score -= 1;
+                    changed = true;
+                }
+            } else {
+                // Initialize if not present (optimization: only if we need to track?)
+            }
+
+            // 2. Penalize Failed Leader (if Timeout QC)
+            let qc = &block.justify;
+            if qc.block_hash == Hash::default() && qc.view > 0 {
+                // Timeout detected for qc.view
+                let committee_len = state.committee.len();
+                if committee_len > 0 {
+                    let failed_leader_idx = (qc.view as usize) % committee_len;
+                    // Safety check index
+                    if let Some(failed_leader) = state.committee.get(failed_leader_idx).cloned() {
+                        log::warn!(
+                            "Timeout QC for View {}. Penalizing Leader {:?}",
+                            qc.view,
+                            failed_leader
+                        );
+
+                        // Increment Score
+                        let score = state
+                            .inactivity_scores
+                            .entry(failed_leader.clone())
+                            .or_insert(0);
+                        *score += 1;
+                        let current_score = *score;
+                        changed = true;
+
+                        // Immediate Slash (Incremental)
+                        let penalty = U256::from(10u64);
+                        let pk_bytes = failed_leader.0.to_bytes();
+                        let hash = crate::types::keccak256(pk_bytes);
+                        let address = Address::from_slice(&hash[12..]);
+
+                        if let Some(mut info) = db.basic(address).unwrap() {
+                            if info.balance < penalty {
+                                info.balance = U256::ZERO;
+                            } else {
+                                info.balance -= penalty;
+                            }
+                            let new_info = crate::storage::AccountInfo {
+                                nonce: info.nonce,
+                                balance: info.balance,
+                                code_hash: Hash(info.code_hash.0),
+                                code: info.code.map(|c| c.original_bytes()),
+                            };
+                            db.commit_account(address, new_info).unwrap();
+                        }
+
+                        // Threshold Check
+                        if current_score > 50 {
+                            log::warn!(
+                                "Validator {:?} exceeded inactivity threshold ({}). Removing from committee.",
+                                failed_leader,
+                                current_score
+                            );
+                            if let Some(pos) =
+                                state.committee.iter().position(|x| *x == failed_leader)
+                            {
+                                state.committee.remove(pos);
+                                // Reset score
+                                state.inactivity_scores.remove(&failed_leader);
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+
+            if changed {
+                db.save_consensus_state(&state).unwrap();
+            }
+        }
+
         for tx in &block.payload {
             if tx.gas_limit > self.block_gas_limit {
                 return Err(ExecutionError::Transaction(
