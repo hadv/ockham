@@ -118,7 +118,7 @@ fn test_liveness_slashing() {
     // 5. Reward Check (Node 2 should decrement, but it's 0 so stays 0)
     // Let's set Node 2 score to 5 first.
     {
-        let mut db = state_manager.lock().unwrap();
+        let db = state_manager.lock().unwrap();
         let mut state = db.get_consensus_state().unwrap().unwrap();
         state
             .inactivity_scores
