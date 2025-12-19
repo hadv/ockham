@@ -1,7 +1,6 @@
 use ockham::crypto::{Hash, PrivateKey, PublicKey};
 use ockham::storage::Storage;
 use ockham::types::{Block, QuorumCertificate, U256};
-use revm::Database;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -57,7 +56,11 @@ fn test_liveness_slashing() {
         committee: committee.clone(),
         pending_validators: vec![],
         exiting_validators: vec![],
-        stakes: std::collections::HashMap::new(),
+        stakes: {
+            let mut m = std::collections::HashMap::new();
+            m.insert(victim_addr, U256::from(1000u64));
+            m
+        },
         inactivity_scores: std::collections::HashMap::new(),
     };
     storage.save_consensus_state(&initial_state).unwrap();
@@ -96,18 +99,13 @@ fn test_liveness_slashing() {
 
     // 4. Verify Slashing
     {
-        let mut db = state_manager.lock().unwrap();
-        // Check Balance
-        let account = db.basic(victim_addr).unwrap().unwrap();
-        // Should be 1000 - 10 = 990
-        assert_eq!(
-            account.balance,
-            U256::from(990u64),
-            "Balance should be slashed by 10"
-        );
+        let db = state_manager.lock().unwrap();
+        // Check Stake
+        let state = db.get_consensus_state().unwrap().unwrap();
+        let stake = state.stakes.get(&victim_addr).expect("Stake should exist");
+        assert_eq!(*stake, U256::from(990u64), "Stake should be slashed by 10");
 
         // Check Score
-        let state = db.get_consensus_state().unwrap().unwrap();
         let score = state
             .inactivity_scores
             .get(&victim_id)
@@ -130,7 +128,7 @@ fn test_liveness_slashing() {
     executor.execute_block(&mut block_to_exec).unwrap();
 
     {
-        let mut db = state_manager.lock().unwrap();
+        let db = state_manager.lock().unwrap();
         let state = db.get_consensus_state().unwrap().unwrap();
         let score = state.inactivity_scores.get(&keys[author_idx].0).unwrap();
         assert_eq!(*score, 4, "Author score should decrement");
@@ -138,8 +136,8 @@ fn test_liveness_slashing() {
         let victim_score = state.inactivity_scores.get(&victim_id).unwrap();
         assert_eq!(*victim_score, 2, "Victim score should increment again");
 
-        let acc = db.basic(victim_addr).unwrap().unwrap();
-        assert_eq!(acc.balance, U256::from(980u64), "Balance slashed again");
+        let stake = state.stakes.get(&victim_addr).unwrap();
+        assert_eq!(*stake, U256::from(980u64), "Stake slashed again");
     }
 
     // 6. Threshold Removal
@@ -150,7 +148,7 @@ fn test_liveness_slashing() {
     }
 
     {
-        let mut db = state_manager.lock().unwrap();
+        let db = state_manager.lock().unwrap();
         let state = db.get_consensus_state().unwrap().unwrap();
 
         // Check if removed from committee

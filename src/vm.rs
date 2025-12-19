@@ -199,19 +199,15 @@ impl Executor {
                         let hash = crate::types::keccak256(pk_bytes);
                         let address = Address::from_slice(&hash[12..]);
 
-                        if let Some(mut info) = db.basic(address).unwrap() {
-                            if info.balance < penalty {
-                                info.balance = U256::ZERO;
+                        if let Some(stake) = state.stakes.get_mut(&address) {
+                            if *stake < penalty {
+                                *stake = U256::ZERO;
                             } else {
-                                info.balance -= penalty;
+                                *stake -= penalty;
                             }
-                            let new_info = crate::storage::AccountInfo {
-                                nonce: info.nonce,
-                                balance: info.balance,
-                                code_hash: Hash(info.code_hash.0),
-                                code: info.code.map(|c| c.original_bytes()),
-                            };
-                            db.commit_account(address, new_info).unwrap();
+                            changed = true;
+                        } else {
+                             log::warn!("Validator {:?} has no stake entry found for address {:?}", failed_leader, address);
                         }
 
                         // Threshold Check
