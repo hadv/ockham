@@ -146,6 +146,14 @@ impl SimplexState {
         // but let's save genesis as the "default" block.
         storage.save_qc(&genesis_qc).unwrap();
 
+        let mut initial_stakes = HashMap::new();
+        for pk in &committee {
+            let pk_bytes = pk.0.to_bytes();
+            let hash = crate::types::keccak256(pk_bytes);
+            let address = crate::types::Address::from_slice(&hash[12..]);
+            initial_stakes.insert(address, crate::types::U256::from(5000u64));
+        }
+
         let initial_state = ConsensusState {
             view: 1,
             finalized_height: 0,
@@ -155,7 +163,7 @@ impl SimplexState {
             committee: committee.clone(),
             pending_validators: vec![],
             exiting_validators: vec![],
-            stakes: HashMap::new(),
+            stakes: initial_stakes,
             inactivity_scores: HashMap::new(),
         };
         storage.save_consensus_state(&initial_state).unwrap();
